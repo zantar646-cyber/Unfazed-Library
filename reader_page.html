@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge"/>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="icon" href="https://reader.z-lib.fm/favicon/favicon.png?v=2" sizes="32x32" type="image/x-icon" />
+
+<!-- Apple Touch Icon -->
+<link rel="apple-touch-icon" href="https://reader.z-lib.fm/apple-touch-icon.png" sizes="180x180">
+
+
+<link rel="manifest" href="https://reader.z-lib.fm/manifest.json">
+<title>LITERA Reader</title>
+    <meta name="csrf-token" content="MKyTSX40757P5iQ5V1PDMFgSWpJR5xkivhB1dUBg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" as="style" href="https://reader.z-lib.fm/build/assets/critical-05ed714a.css" /><link rel="preload" as="style" href="https://reader.z-lib.fm/build/assets/bundle-9434e38f.css" /><link rel="preload" as="style" href="https://reader.z-lib.fm/build/assets/bundle-2148840a.css" /><link rel="stylesheet" href="https://reader.z-lib.fm/build/assets/critical-05ed714a.css" /><link rel="stylesheet" href="https://reader.z-lib.fm/build/assets/bundle-9434e38f.css" /><link rel="stylesheet" href="https://reader.z-lib.fm/build/assets/bundle-2148840a.css" />    <script id="constants-identity-script">
+        const __globalConstants = JSON.parse('{\u0022reader-landing-url\u0022:\u0022https:\\\/\\\/litera-reader.com\u0022,\u0022social-tg-link\u0022:\u0022https:\\\/\\\/t.me\\\/litera_read\u0022,\u0022social-tg_cn-link\u0022:\u0022https:\\\/\\\/t.me\\\/litera_read_china\u0022,\u0022social-twitter-link\u0022:\u0022https:\\\/\\\/x.com\\\/Litera_Reader\u0022}');
+    </script>
+    </head>
+<body class="wrapper body_veil-blocked">
+
+<script src="/static-js/critical.js?v=6"></script>
+<script src="/static-js/icon-font-debug.js?v=1"></script>
+
+<!-- lr - LITERA Reader -->
+<header class="lr-header">
+    <nav id="controls">
+    <div id="controls-left">
+                            <a class="lr-brand" href="https://litera-reader.com" target="_blank" data-target-desktop = 'external'>
+                <span class="lr-brand__label">LITERA Reader</span>
+            </a>
+                        <div id="btnSideToggle" title="Content" class="control-cell_small">
+            <i class="icon-sidebar"></i>
+        </div>
+                <div id="pageControls" class="control-cell_big hidden">
+            <button id="btnPrev" title="Previous page" class="control-cell_support">
+                <i class="icon-arrow_right"></i>
+            </button>
+            <div id="pageCounter">
+                <div id="currentPagesFlipper">
+                    <span id="currentPages"></span>
+                    <form id="currentPageInputForm" action="">
+                        <input type="number" name="currentPageInput" id="currentPageInput" min="1" class="hidden"/>
+                        <input type="submit" value="" class="hidden">
+                    </form>
+                </div>
+                <i class="icon-slash_bottom-to-top"></i>
+                <span id="totalPages"></span>
+            </div>
+            <button id="btnNext" title="Next page" class="control-cell_support">
+                <i class="icon-arrow_right"></i>
+            </button>
+        </div>
+        <div id="scaleControls" class="control-cell_big hidden">
+            <div id="scaleLess" title="Zoom out" class="control-cell_support"><i class="icon-minus"></i></div>
+            <div id="scaleMore" title="Zoom in" class="control-cell_support"><i class="icon-plus"></i></div>
+        </div>
+            </div>
+
+        <a id="bookTitleHandler" class="hidden" href="javascript:void(0)">
+        <span id="bookTitle"></span>
+        <div id="linkContainer"><i class="icon-link"></i></div>
+    </a>
+        <div id="controls-right">
+        <a id="btnDownload" title="Download" class="control-cell_small">
+            <i class="icon-download"></i>
+        </a>
+        <button id="btnSettings" title="Text settings" class="control-cell_small hidden">
+            <i class="icon-settings-icon"></i>
+        </button>
+        <button id="btnSocial" title="Social activity" class="control-cell_small hidden">
+            <i class="icon-social-menu-icon"></i>
+        </button>
+                <div id="btnFullScreen" title="Full screen" class="control-cell_small hidden">
+            <i class="icon-fullscreen_enter"></i>
+        </div>
+            </div>
+</nav>
+    <nav id="settings" class="settings-sidebar hidden">
+    <div class="settings-sidebar__outer-wrapper">
+        <div id="settings-content" class="settings-sidebar__content"></div>
+    </div>
+</nav>
+    <div id="socialDashboard" class="social-dashboard">
+    <div id="socialDashboardPanel" class="social-dashboard_panel">
+        <div class="social-impressions-trigger">
+            <button id="socialDashboardImpressionFilterBtn" class="social-impressions-trigger__button" type="button">
+                <span class="social-impressions-trigger__icon hidden"></span>
+                <span class="social-impressions-trigger__label">All impressions</span>
+            </button>
+        </div>
+        <div id="socialDashboardFilter" class="social-dashboard_filter">
+            <button class="social-filter__option social-filter__option_all active" data-filter="all">All</button>
+            <button class="social-filter__option social-filter__option_mine" data-filter="my">Mine</button>
+        </div>
+    </div>
+    <p class="social-dashboard_not-found impression hidden">There are no quotes associated with this impression.</p>
+    <div class="social-dashboard_load-btn hidden" id="loadPreviousQuotes">
+        <img class="social-dashboard_load-btn__spinner" src="/pictures/social-dashboard/social-dashboard-loader.svg" alt="Loading..." />
+    </div>
+    <div id="socialDashboardList" class="social-dashboard_list"></div>
+    <div class="social-dashboard_load-btn hidden" id="loadMoreQuotes">
+        <img class="social-dashboard_load-btn__spinner" src="/pictures/social-dashboard/social-dashboard-loader.svg" alt="Loading..." />
+    </div>
+    <div id="socialDashboardSpinner" class="social-dashboard__spinner hidden">
+        <img src="/pictures/social-dashboard/social-dashboard-loader.svg" alt="Loading..." />
+    </div>
+</div>
+    <nav id="hint" class="hint-sidebar hidden">
+    <div class="hint-sidebar__outer-wrapper">
+        <div id="hint-content" class="hint-sidebar__content"></div>
+    </div>
+</nav>
+<div id="hint-backdrop" class="hint-backdrop hidden"></div>
+    <book-progress-bar-wb id="progressBar"></book-progress-bar-wb>
+    <nav id="sidebar">
+    <div id="sidebar-controls">
+        <div id="btnThumbnailsSidebar" title="Thumbnails"
+             class="control-cell_small control-cell_sidebar-control hidden">
+            <i class="icon-thumbnails"></i>
+        </div>
+        <div id="btnBookmarksSidebar" title="Bookmarks" class="control-cell_small control-cell_sidebar-control">
+            <i class="icon-list"></i>
+        </div>
+        <div id="btnSearchSidebar" title="Search" class="control-cell_small control-cell_sidebar-control hidden">
+            <i class="icon-magnifying-glass"></i>
+        </div>
+    </div>
+    <div id="sidebar-content">
+        <div id="thumbnails-panel" class="hidden"></div>
+        <div id="bookmarks-panel"></div>
+        <div id="search-panel" class="hidden">
+            <div class="search-head-wrap">
+                <div class="search-input-wrap">
+                    <input id="searchInput" data-lang-title="search.search" title="Search" type="text">
+                    <div class="search-count">
+                        <span id="searchHighlightSelected">0</span>
+                        <span id="searchHighlightSep">/</span>
+                        <span id="searchHighlightTotal">0</span>
+                    </div>
+                    <div id="searchNavWrap">
+                        <button id="prevHighlight"><i class="icon-arrow_right search-arrow search-arrow_top"></i>
+                        </button>
+                        <button id="nextHighlight"><i class="icon-arrow_right search-arrow search-arrow_bottom"></i>
+                        </button>
+                    </div>
+                </div>
+                <label class="searchOption"><input type="checkbox" id="cbMatchCase"><span
+                        data-lang-text="search.match-case">Match case</span></label>
+                <label class="searchOption"><input type="checkbox" id="cbLimitResults"><span
+                        data-lang-text="search.limit-results-1">Limit results 1 per page</span></label>
+                <hr>
+            </div>
+            <div id="searchResults"></div>
+        </div>
+    </div>
+</nav>
+</header>
+
+
+<div id="idrviewer" class="viewer">
+        <button id="prevPage" class="navigation-button hidden">
+        <i class="icon-arrow_right navigation-button__icon"></i>
+    </button>
+    <button id="nextPage" class="navigation-button hidden">
+        <i class="icon-arrow_right navigation-button__icon"></i>
+    </button>
+    </div>
+<div class="social-networks">
+        <a href="https://t.me/litera_read" target="_blank" class="social-networks__link telegram-link">
+            <i class="icon-telegram social-networks__icon social-networks__icon--telegram"></i>
+        </a>
+        <a href="https://x.com/Litera_Reader" target="_blank" class="social-networks__link twitter-link">
+            <i class="icon-twitter social-networks__icon social-networks__icon--twitter"></i>
+        </a>
+        <a href="https://t.me/litera_read_china" target="_blank" class="social-networks__link telegram-cn-link">
+            <span class="social-networks__double-icons">
+                <i class="icon-stars social-networks__icon social-networks__icon--stars"></i>
+                <i class="icon-telegram social-networks__icon social-networks__icon--telegram"></i>
+            </span>
+        </a>
+    </div>
+<div class="container">
+    <div class="feedback-notice-card beta-notice-card_appeared">
+        <div class="beta-notice-card__controls">
+            <div class="beta-notice-card__close-button">
+                <i class="icon-arrow_right"></i><i class="icon-arrow_right"></i>
+            </div>
+        </div>
+        <div class="beta-notice-card__form">
+            <div class="form-title">Specify your problem</div>
+            <br/>
+
+            <form id="feedback-form">
+                <label class="b-contain">
+                        <span class="form-check-label">
+                            Everything works fine, without any issues
+                        </span>
+                    <input class="form-check-input" type="checkbox" value="Everything works fine, without any issues" id="flexCheckDefault"
+                           name="noProblems">
+                    <div class="b-input"></div>
+                </label>
+                <label class="b-contain">
+                        <span class="form-check-label">
+                            Blurry text layer
+                        </span>
+                    <input class="form-check-input" type="checkbox" value="Blurry text layer"
+                           name="blurryText">
+                    <div class="b-input"></div>
+                </label>
+                <label class="b-contain">
+                        <span class="form-check-label">
+                            Text / images not visible in dark mode
+                        </span>
+                    <input class="form-check-input" type="checkbox" value="Text / images not visible in dark mode"
+                           id="flexCheckChecked1" name="textNotVisible">
+                    <div class="b-input"></div>
+                </label>
+                <label class="b-contain">
+                        <span class="form-check-label">
+                            Table of contents not working properly
+                        </span>
+                    <input class="form-check-input" type="checkbox"
+                           value="Table of contents not working properly" id="flexCheckChecked2"
+                           name="workingCorrectly">
+                    <div class="b-input"></div>
+                </label>
+                <label class="b-contain">
+                        <span class="form-check-label">
+                           Reading progress not being saved
+                        </span>
+                    <input class="form-check-input" type="checkbox" value="Reading progress not being saved"
+                           id="flexCheckChecked3" name="fullscreenButton">
+                    <div class="b-input"></div>
+                </label>
+                <label class="b-contain">
+                        <span class="form-check-label">
+                            Quote highlighting issue
+                        </span>
+                    <input class="form-check-input" type="checkbox" value="Quote highlighting issue"
+                           id="flexCheckChecked4" name="quoteHighlightingIssue">
+                    <div class="b-input"></div>
+                </label>
+
+                <div class="feedback-form__actions">
+                    <div class="feedback-form__links">
+                        <a class="feedback-form__link feedback-another">
+                            Another reason
+                        </a>
+                        or
+                        <a class="feedback-form__link feedback-feature">
+                            Suggest feature
+                        </a>
+                    </div>
+                    <button class="feedback-form__submit submit__disabled" type="submit" disabled>
+                        Report problem
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="feedback-notice-card-another another-form-modal beta-notice-card_appeared">
+        <div class="beta-notice-card__controls">
+            <div class="beta-notice-card__close-button another-form__close-button">
+                <i class="icon-arrow_right"></i><i class="icon-arrow_right"></i>
+            </div>
+        </div>
+        <div class="beta-notice-card__form">
+            <div class="form-title">Describe your problem</div>
+            <br/>
+
+            <form id="feedback-form-text">
+                <div>
+                        <textarea placeholder="Please be as detailed as possible"
+                                  class="feedback-form__textarea"></textarea>
+                </div>
+
+                <div class="another-form__actions">
+                    <button class="feedback-form__submit another-submit submit__disabled" disabled>
+                        Report problem
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="feedback-notice-card-feature another-form-modal beta-notice-card_appeared">
+        <div class="beta-notice-card__controls">
+            <div class="beta-notice-card__close-button feature-form__close-button">
+                <i class="icon-arrow_right"></i><i class="icon-arrow_right"></i>
+            </div>
+        </div>
+        <div class="beta-notice-card__form">
+            <div class="form-title">Your dream feature</div>
+            <br/>
+
+            <form id="feature-form-text">
+                <div>
+                        <textarea
+                            placeholder="Have a feature that would make your reading experience better? Describe it here, and we’ll consider it for future updates!"
+                            class="feature-form__textarea"
+                        ></textarea>
+                </div>
+
+                <div class="another-form__actions">
+                    <button class="feedback-form__submit feature-submit submit__disabled" disabled>
+                        Suggest feature
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="feedback-notice-card-success beta-notice-card_appeared">
+        <div class="beta-notice-card__controls">
+            <div class="beta-notice-card__close-button success-message__close-button">
+                <i class="icon-arrow_right"></i><i class="icon-arrow_right"></i>
+            </div>
+        </div>
+        <span class="beta-notice-card__message">
+            <span>Thank you for your report!</span> <br/>
+            <div>
+               Your feedback is very important to us. You may find other errors and suggest new features using the bug icon
+            </div>
+        </span>
+    </div>
+
+    <div class="feedback-notice-card-error beta-notice-card_appeared">
+        <div class="beta-notice-card__controls">
+            <div class="beta-notice-card__close-button error-message__close-button">
+                <i class="icon-arrow_right"></i><i class="icon-arrow_right"></i>
+            </div>
+        </div>
+        <span class="beta-notice-card__message">
+                    <span>Something went wrong :(</span> <br/>
+                    An unexpected error has occurred, please try again later
+                </span>
+    </div>
+</div>
+<script id="request-identity-script">
+    const connectionInfo = JSON.parse('{\u0022client_key\u0022:\u00221fFLi67gBrNRP1j1iPy1\u0022,\u0022extension\u0022:\u0022pdf\u0022,\u0022signature\u0022:\u002215c36f0d0bc59112672dd65771eafcec8c9c605c18fb824f90d832d4865bd0ef\u0022,\u0022file_access_token\u0022:\u0022eyJleHAiOjE3ODI4NDYwOTEsInZlciI6IjEuMCIsInR5cCI6IkpXVCIsImFsZyI6IkhTMjU2In0.eyJzdWIiOiJmaWxlX2FjY2VzcyIsImZpbGVfc2hhMjU2IjoiOTkwMjhjOGNhMDQ1YmE3NWEyOTMyZTIzOWIxMmQ5N2NjNzQ4NTkwMjY1NjNhYTBlYjkyNzc2ZDg1ZDFhNDU3OSIsImFjY2Vzc19sZXZlbCI6ImZ1bGwiLCJpc19wdWJsaWMiOmZhbHNlLCJsaW5rX293bmVyIjo0OTI5MDc3M30.Rls7FE-9GnqAcRbzSt0Ir7KF1EtXYR4Eo926Ph3qDC0\u0022,\u0022detectors\u0022:{\u0022is-desktop-app\u0022:false,\u0022embed-mode\u0022:\u0022proxy\u0022,\u0022client\u0022:\u0022zlib\u0022},\u0022constants\u0022:{\u0022reader-landing-url\u0022:\u0022https:\\\/\\\/litera-reader.com\u0022,\u0022social-tg-link\u0022:\u0022https:\\\/\\\/t.me\\\/litera_read\u0022,\u0022social-tg_cn-link\u0022:\u0022https:\\\/\\\/t.me\\\/litera_read_china\u0022,\u0022social-twitter-link\u0022:\u0022https:\\\/\\\/x.com\\\/Litera_Reader\u0022},\u0022source\u0022:\u002299028c8ca045ba75a2932e239b12d97cc74859026563aa0eb92776d85d1a4579\u0022,\u0022request_source\u0022:null}');
+</script>
+
+    <script id="detectors-identity-script">
+        const detectors = JSON.parse('{\u0022is-desktop-app\u0022:false,\u0022embed-mode\u0022:\u0022proxy\u0022,\u0022client\u0022:\u0022zlib\u0022}');
+    </script>
+
+<script id="counter-script">
+    new Image().src = "//counter.yadro.ru/hit;reader?t50.6;r"+
+        escape(document.referrer)+((typeof(screen)=="undefined")?"":
+    ";s"+screen.width+"*"+screen.height+"*"+(screen.colorDepth?
+    screen.colorDepth:screen.pixelDepth))+";u"+escape(document.URL)+
+    ";h"+escape(document.title.substring(0,150))+";"+Math.random()
+</script>
+<link rel="preload" as="style" href="https://reader.z-lib.fm/build/assets/ReaderBase-e59c22b6.css" /><link rel="modulepreload" as="script" href="https://reader.z-lib.fm/build/assets/bundle-431d4e8d.js" /><link rel="modulepreload" as="script" href="https://reader.z-lib.fm/build/assets/component-7c6a0fda.js" /><link rel="modulepreload" as="script" href="https://reader.z-lib.fm/build/assets/Store-4b61aed3.js" /><link rel="modulepreload" as="script" href="https://reader.z-lib.fm/build/assets/navigation-cd1f5176.js" /><link rel="modulepreload" as="script" href="https://reader.z-lib.fm/build/assets/ReaderBase-2d1be057.js" /><link rel="modulepreload" as="script" href="https://reader.z-lib.fm/build/assets/FeedbackController-9fbb1225.js" /><link rel="stylesheet" href="https://reader.z-lib.fm/build/assets/ReaderBase-e59c22b6.css" /><script type="module" src="https://reader.z-lib.fm/build/assets/bundle-431d4e8d.js"></script></body>
+</html>
