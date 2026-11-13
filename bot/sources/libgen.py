@@ -197,15 +197,36 @@ class LibGenSource:
             _source="libgen",
         )
 
-    async def download(self, url: str, fmt: str = "epub", max_bytes: Optional[int] = None) -> Optional[bytes]:
+    async def download(
+        self,
+        url: str,
+        fmt: str = "epub",
+        max_bytes: Optional[int] = None,
+        timeout_seconds: int = 120,
+    ) -> Optional[bytes]:
         """Resolve a LibGen page/ads URL and return the actual book file bytes."""
         max_bytes = max_bytes or settings.max_file_size
-        timeout = aiohttp.ClientTimeout(total=120, connect=15, sock_read=60)
+        timeout = aiohttp.ClientTimeout(
+            total=timeout_seconds, connect=10, sock_read=min(60, timeout_seconds)
+        )
         headers = {"User-Agent": self.USER_AGENT, "Accept": "*/*"}
 
         try:
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
                 direct_url = await self._resolve_download_url(session, url)
+                if not direct_url:
+                    # A dead ads.php page on one mirror is common; retry the
+                    # same md5 against the other frontends before giving up.
+                    md5_match = re.search(r"([a-fA-F0-9]{32})", url or "")
+                    if md5_match:
+                        for base in self.MIRRORS:
+                            if base in (url or ""):
+                                continue
+                            direct_url = await self._resolve_download_url(
+                                session, f"{base}/ads.php?md5={md5_match.group(1)}"
+                            )
+                            if direct_url:
+                                break
                 if not direct_url:
                     logger.warning(f"LibGen could not resolve a direct link from {url}")
                     return None

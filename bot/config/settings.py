@@ -91,6 +91,7 @@ class Settings:
 
     webhook_url: str = field(default_factory=lambda: os.getenv("WEBHOOK_URL", "").strip())
     webhook_secret: str = field(default_factory=lambda: os.getenv("WEBHOOK_SECRET", "").strip())
+    diag_token: str = field(default_factory=lambda: os.getenv("DIAG_TOKEN", "").strip())
     database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", "")).strip())
     is_vercel: bool = field(default_factory=lambda: bool(os.getenv("VERCEL")))
 

@@ -462,8 +462,14 @@ def _get_file_extension(book: Any) -> str:
     return ".epub"
 
 
-async def _send_book_file(message: Message, book: Any, file_bytes: bytes, source: Optional[str] = None) -> None:
-    ext = _get_file_extension(book)
+async def _send_book_file(
+    message: Message,
+    book: Any,
+    file_bytes: bytes,
+    source: Optional[str] = None,
+    fmt_override: Optional[str] = None,
+) -> None:
+    ext = f".{fmt_override.lstrip('.')}" if fmt_override else _get_file_extension(book)
     filename = f"{sanitize_html(book.title)}{ext}"
     filename = filename.replace(" ", "_")
     if len(filename) > 64:
@@ -474,7 +480,7 @@ async def _send_book_file(message: Message, book: Any, file_bytes: bytes, source
         else:
             filename = filename[:64]
 
-    file_ext = getattr(book, "file_extension", None) or ext.lstrip(".")
+    file_ext = (fmt_override or getattr(book, "file_extension", None) or ext.lstrip(".")).lstrip(".")
     fmt_emoji = get_format_emoji(file_ext)
     fmt_name = format_extension(file_ext)
     caption = (
@@ -492,7 +498,6 @@ async def _send_book_file(message: Message, book: Any, file_bytes: bytes, source
 
     if sent.document:
         file_id = sent.document.file_id
-        file_ext = getattr(book, "file_extension", None) or ext.lstrip(".")
         convert_key = create_convert_key(file_id, file_ext)
         await sent.edit_reply_markup(
             reply_markup=download_complete_keyboard(book.id, convert_key)
@@ -507,6 +512,93 @@ async def _record_successful_download(book_id: str, db_user: DBUser, method: str
         file_size=book.file_size,
     )
     await db.increment_download_count(book_id)
+
+
+async def _try_fallback_file(book: Any, fmt: str) -> tuple[Optional[bytes], Optional[str], Optional[str]]:
+    """Find the same title on LibGen when the primary source is blocked.
+
+    Z-Library search works from most hosts, but its ``/dl`` endpoints sit behind
+    a Cloudflare challenge that a plain HTTP client cannot pass. Anna's Archive
+    is likewise DDoS-Guard protected. LibGen remains downloadable, so use it as
+    a cross-source fallback instead of sending the user a link.
+
+    The whole lookup is bounded so it cannot exhaust the serverless time budget.
+
+    Returns ``(file_bytes, extension, source_label)``.
+    """
+    title = (book.title or "").strip()
+    if not title:
+        return None, None, None
+
+    from bot.sources.libgen import is_libgen_url
+
+    if book.download_url and is_libgen_url(book.download_url):
+        return None, None, None
+
+    try:
+        return await asyncio.wait_for(_fallback_file(book, title, fmt), timeout=20)
+    except asyncio.TimeoutError:
+        logger.warning(f"Fallback download timed out for '{title}'")
+        return None, None, None
+
+
+async def _fallback_file(
+    book: Any, title: str, fmt: str
+) -> tuple[Optional[bytes], Optional[str], Optional[str]]:
+    from bot.sources.dedup import fuzzy_similar, normalize_title
+    from bot.sources.libgen import LibGenSource
+
+    target = normalize_title(title)
+    author_norm = normalize_title(book.author or "")
+    source = LibGenSource()
+
+    results = []
+    for query in [f"{title} {book.author or ''}".strip(), title]:
+        try:
+            found, _ = await asyncio.wait_for(source.search(query, per_page=10), timeout=6)
+        except Exception as e:
+            logger.debug(f"Fallback LibGen search failed for '{query}': {e}")
+            continue
+        if found:
+            results = found
+            break
+
+    if not results:
+        return None, None, None
+
+    scored = []
+    for result in results:
+        candidate = normalize_title(result.title or "")
+        if not candidate:
+            continue
+        score = fuzzy_similar(target, candidate)
+        shorter = min(len(target), len(candidate))
+        longer = max(len(target), len(candidate)) or 1
+        if target and (target in candidate or candidate in target) and shorter >= 0.6 * longer:
+            score = max(score, 0.9)
+        result_author = normalize_title(result.author or "")
+        if author_norm and result_author and (
+            author_norm in result_author
+            or result_author in author_norm
+            or fuzzy_similar(author_norm, result_author) >= 0.7
+        ):
+            score += 0.05
+        if (result.extension or "").lower().lstrip(".") == (fmt or "").lower():
+            score += 0.03
+        if score >= 0.7:
+            scored.append((score, result))
+
+    scored.sort(key=lambda item: -item[0])
+    for _, candidate in scored[:2]:
+        data = await source.download(
+            candidate.download_url,
+            fmt=candidate.extension or fmt,
+            timeout_seconds=16,
+        )
+        if data:
+            logger.info(f"Fallback LibGen delivered '{candidate.title}' for '{title}'")
+            return data, candidate.extension or fmt, "LibGen (fallback)"
+    return None, None, None
 
 
 async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUser) -> None:
@@ -583,6 +675,16 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
         download_url, alt_url, file_token, _ = await _resolve_book_url(book, skip_stored=True)
 
     if not download_url:
+        data, alt_fmt, alt_source = await _try_fallback_file(book, fmt)
+        if data:
+            await _send_book_file(
+                callback.message, book, data, source=alt_source, fmt_override=alt_fmt
+            )
+            await _record_successful_download(
+                book_id, db_user, alt_source or "fallback", book
+            )
+            logger.info(f"Fallback download successful for {book.title}")
+            return
         lang = db_user.preferred_language if db_user else None
         await callback.message.answer(get_text("download_unavailable", lang))
         await db.record_download(
@@ -609,6 +711,23 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
 
     # Last resort: browser download (try reader domain / token URL first)
     lang = db_user.preferred_language if db_user else None
+    fallback_tried = False
+
+    # Vercel has no browser runtime for Cloudflare challenges. Try the
+    # cross-source LibGen fallback before wasting the serverless budget on it.
+    if settings.is_vercel and (
+        _cf_protected or book_source in ("Z-Library", "Anna's Archive", "OpenLibrary")
+    ):
+        data, alt_fmt, alt_source = await _try_fallback_file(book, fmt)
+        fallback_tried = True
+        if data:
+            await _send_book_file(
+                callback.message, book, data, source=alt_source, fmt_override=alt_fmt
+            )
+            await _record_successful_download(book_id, db_user, alt_source or "fallback", book)
+            logger.info(f"Fallback download successful for {book.title}")
+            return
+
     status_msg = await callback.message.answer(get_text("download_loading", lang))
     browser_cookies = {}
     if api._remix_userkey and api._remix_userid:
@@ -620,7 +739,21 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
         await _send_book_file(callback.message, book, result.data, source="Z-Library (browser)")
         await _record_successful_download(book_id, db_user, "browser", book)
         logger.info(f"Browser download successful: {book.title}")
-    elif result.success:
+        return
+
+    # Cross-source fallback: Z-Library/AA blocked the file, but LibGen may
+    # still have the same title. Deliver the file instead of a link.
+    if not fallback_tried:
+        data, alt_fmt, alt_source = await _try_fallback_file(book, fmt)
+        if data:
+            await _send_book_file(
+                callback.message, book, data, source=alt_source, fmt_override=alt_fmt
+            )
+            await _record_successful_download(book_id, db_user, alt_source or "fallback", book)
+            logger.info(f"Fallback download successful for {book.title}")
+            return
+
+    if result.success:
         logger.error(
             f"Browser download returned bad content for {book.title}: "
             f"{result.data[:100].decode('utf-8', errors='replace')!r} "
@@ -676,6 +809,12 @@ async def process_download_from_id(message: Message, book_id: str, db_user: DBUs
     download_url, alt_url, file_token, _ = await _resolve_book_url(book)
 
     if not download_url:
+        data, alt_fmt, alt_source = await _try_fallback_file(book, fmt)
+        if data:
+            await _send_book_file(message, book, data, source=alt_source, fmt_override=alt_fmt)
+            await _record_successful_download(book.id, db_user, alt_source or "fallback", book)
+            logger.info(f"Fallback download successful for /download: {book.title}")
+            return
         await message.answer(get_text("download_unavailable", lang))
         await db.record_download(
             user_id=db_user.id,
@@ -700,6 +839,13 @@ async def process_download_from_id(message: Message, book_id: str, db_user: DBUs
         await _send_book_file(message, book, data, source=download_source)
         await _record_successful_download(book.id, db_user, download_source or "direct", book)
         logger.info(f"Direct download successful for /download: {book.title}")
+        return
+
+    data, alt_fmt, alt_source = await _try_fallback_file(book, fmt)
+    if data:
+        await _send_book_file(message, book, data, source=alt_source, fmt_override=alt_fmt)
+        await _record_successful_download(book.id, db_user, alt_source or "fallback", book)
+        logger.info(f"Fallback download successful for /download: {book.title}")
         return
 
     await db.record_download(

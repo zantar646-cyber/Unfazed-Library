@@ -81,11 +81,32 @@ async def handle_webhook_update(body_bytes: bytes, secret_token_header: Optional
 
 async def handle_get_request(path: str, query_params: Dict[str, list[str]], host: str) -> tuple[int, Dict[str, Any]]:
     """Handle administrative and monitoring GET endpoints."""
-    bot, _ = await get_bot_and_dispatcher()
-
     parsed_path = path.rstrip("/").lower()
     if parsed_path.startswith("/api"):
         parsed_path = parsed_path[4:]  # Normalize /api/x -> /x
+
+    # 0. Source reachability diagnostics (no bot init; protected by token)
+    if parsed_path in ("/sources_check", "/api/sources_check"):
+        expected = settings.diag_token or settings.webhook_secret
+        supplied = (query_params.get("token") or [""])[0]
+        if not expected:
+            return 403, {
+                "error": "Diagnostics disabled. Set DIAG_TOKEN or WEBHOOK_SECRET, then call with ?token=..."
+            }
+        if supplied != expected:
+            return 403, {"error": "Unauthorized"}
+
+        from bot.services.diagnostics import check_sources
+
+        try:
+            return 200, await asyncio.wait_for(check_sources(), timeout=25)
+        except asyncio.TimeoutError:
+            return 504, {"error": "Source check timed out"}
+        except Exception as e:
+            logger.exception(f"Source check failed: {e}")
+            return 500, {"error": str(e)}
+
+    bot, _ = await get_bot_and_dispatcher()
 
     # 1. Health & status
     if parsed_path in ("", "/health", "/index", "/index.py"):
@@ -110,6 +131,7 @@ async def handle_get_request(path: str, query_params: Dict[str, list[str]], host
                 "set_webhook": "/api/set_webhook",
                 "webhook_info": "/api/webhook_info",
                 "stats": "/api/stats",
+                "sources_check": "/api/sources_check?token=...",
                 "cron_alerts": "/api/cron/alerts",
             },
         }

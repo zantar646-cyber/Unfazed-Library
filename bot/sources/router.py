@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
@@ -298,6 +299,13 @@ class SourceRouter:
         data = await self._try_zl_download(book_id, download_url, fmt, file_token)
         if data:
             return data, "Z-Library"
+
+        # A Z-Library id/URL is meaningless to Anna's Archive; skip the slow
+        # AA attempt so the handler can fall back to LibGen within budget.
+        host = (urllib.parse.urlparse(download_url or "").hostname or "").lower()
+        if any(marker in host for marker in ("z-lib", "z-library", "1lib")):
+            logger.info(f"ZL host {host} blocked download; skipping AA fallback")
+            return None, None
 
         logger.info(f"ZL download failed for {book_id}, trying AA fallback")
         data = await self._try_aa_download(book_id, fmt)

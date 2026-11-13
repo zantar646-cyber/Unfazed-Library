@@ -42,6 +42,43 @@ async def test_vercel_webhook_secret_mismatch():
 
 
 @pytest.mark.asyncio
+async def test_vercel_sources_check_requires_token():
+    with patch("api.index.settings") as m:
+        m.diag_token = ""
+        m.webhook_secret = "secret"
+        status_code, data = await handle_get_request("/api/sources_check", {}, "test.vercel.app")
+    assert status_code == 403
+    assert "Unauthorized" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_vercel_sources_check_rejects_wrong_token():
+    with patch("api.index.settings") as m:
+        m.diag_token = "diag"
+        m.webhook_secret = ""
+        status_code, data = await handle_get_request(
+            "/api/sources_check", {"token": ["wrong"]}, "test.vercel.app"
+        )
+    assert status_code == 403
+    assert "Unauthorized" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_vercel_sources_check_runs_with_token():
+    report = {"working_sources": ["libgen"]}
+    with patch("api.index.settings") as m, patch(
+        "bot.services.diagnostics.check_sources", new=AsyncMock(return_value=report)
+    ):
+        m.diag_token = "diag"
+        m.webhook_secret = ""
+        status_code, data = await handle_get_request(
+            "/api/sources_check", {"token": ["diag"]}, "test.vercel.app"
+        )
+    assert status_code == 200
+    assert data["working_sources"] == ["libgen"]
+
+
+@pytest.mark.asyncio
 async def test_vercel_asgi_app_get():
     scope = {
         "type": "http",

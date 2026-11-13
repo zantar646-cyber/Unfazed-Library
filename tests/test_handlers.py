@@ -209,3 +209,55 @@ def test_dispatcher_includes_all_routers():
     dp = create_dispatcher()
     # Verify all sub_routers are registered (user, book, shelf, alerts, reader, bookclub, inline, ai_features, admin)
     assert len(dp.sub_routers) == 9
+
+
+@pytest.mark.asyncio
+async def test_fallback_skips_libgen_urls():
+    from types import SimpleNamespace
+
+    from bot.handlers.book import _try_fallback_file
+
+    book = SimpleNamespace(
+        title="Some Book",
+        author="Someone",
+        download_url="https://libgen.li/ads.php?md5=" + "a" * 32,
+        file_extension="epub",
+    )
+    data, fmt, source = await _try_fallback_file(book, "epub")
+    assert data is None
+    assert fmt is None
+    assert source is None
+
+
+@pytest.mark.asyncio
+async def test_fallback_downloads_matching_libgen_result():
+    from types import SimpleNamespace
+
+    from bot.handlers.book import _try_fallback_file
+    from bot.services.api import BookResult
+
+    result = BookResult(
+        id="libgen_" + "b" * 32,
+        title="Deep Work",
+        author="Cal Newport",
+        download_url="https://libgen.li/ads.php?md5=" + "b" * 32,
+        extension="epub",
+        _source="libgen",
+    )
+    fake_source = AsyncMock()
+    fake_source.search = AsyncMock(return_value=([result], 1))
+    fake_source.download = AsyncMock(return_value=b"PK\x03\x04book")
+
+    book = SimpleNamespace(
+        title="Deep Work",
+        author="Cal Newport",
+        download_url="https://z-library.ec/dl/abc",
+        file_extension="epub",
+    )
+
+    with patch("bot.sources.libgen.LibGenSource", return_value=fake_source):
+        data, fmt, source = await _try_fallback_file(book, "epub")
+
+    assert data == b"PK\x03\x04book"
+    assert fmt == "epub"
+    assert source == "LibGen (fallback)"

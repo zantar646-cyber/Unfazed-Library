@@ -51,14 +51,24 @@ git push origin main
 *(If omitted and `USE_SQLITE=true`, the bot uses `/tmp/digital_library.db` which is writable).*
 
 ### Optional Search Sources & Proxy
-- `ANNAS_ARCHIVE_BASE_URL`: e.g. `https://annas-archive.org` (official domains rotate: `.org` / `.se` / `.li`)
+- `ANNAS_ARCHIVE_BASE_URL`: Anna's Archive mirror. Domains rotate and several are currently parked/NXDOMAIN; `.gs` and `.pk` are the newest but may still be behind DDoS-Guard.
 - `ANNAS_ARCHIVE_SECRET_KEY`: Anna's Archive API secret (optional)
-- `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`: Route source requests through a proxy if Cloudflare blocks Vercel's IPs
+- `API_BASE_URL` / `MIRRORS`: Z-Library mirror(s) to try
+- `ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD`, `ZLIBRARY_REMIX_USERKEY`, `ZLIBRARY_REMIX_USERID`: Z-Library session. **Local `.env` values are not deployed to Vercel** — set them in the Vercel dashboard.
+- `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`: Route source requests through a proxy if Cloudflare/DDoS-Guard blocks Vercel's IPs
 - `NO_PROXY`: Hosts that should bypass the proxy
+
+### Source Diagnostics
+After deploying, check which sources are actually reachable **from Vercel's network**:
+```text
+https://your-app-name.vercel.app/api/sources_check?token=YOUR_DIAG_TOKEN
+```
+`DIAG_TOKEN` falls back to `WEBHOOK_SECRET`. The report shows the egress IP/ASN, which Z-Library/Anna's Archive/LibGen endpoints respond, whether a proxy is configured, and which env vars are set (never their values).
 
 ### Optional Cache & Security
 - `REDIS_URL`: Upstash Redis connection string (falls back to in-memory cache if omitted)
 - `WEBHOOK_SECRET`: Secret string to authenticate Telegram updates
+- `DIAG_TOKEN`: Token for `/api/sources_check` (falls back to `WEBHOOK_SECRET`)
 - `ADMIN_IDS`: Comma-separated admin Telegram IDs
 
 5. Click **Deploy**.
