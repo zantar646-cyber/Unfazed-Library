@@ -1,0 +1,12 @@
+# Vercel deployment ignore rules
+light/
+tests/
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+*.sqlite
+*.sqlite3
+reader_cache/
+converter_cache/
