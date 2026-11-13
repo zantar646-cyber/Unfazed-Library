@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import joinedload
 
 from bot.config.settings import settings
-from bot.database.models import AdminLog, Base, Book, Category, Download, Favorite, User
+from bot.database.models import AdminLog, Base, Book, BookAlert, Category, DailyStats, Download, Favorite, ReadingStatus, User
 
 
 class DatabaseService:
@@ -54,6 +54,15 @@ class DatabaseService:
                 if "source" not in cols:
                     connection.execute(text("ALTER TABLE books ADD COLUMN source VARCHAR"))
                     logger.info("Migrated: added 'source' column to books table")
+
+                user_result = connection.execute(text("PRAGMA table_info(users)"))
+                user_cols = {row[1] for row in user_result}
+                if "referral_code" not in user_cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN referral_code VARCHAR(20)"))
+                    logger.info("Migrated: added 'referral_code' column to users table")
+                if "referrer_id" not in user_cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN referrer_id BIGINT"))
+                    logger.info("Migrated: added 'referrer_id' column to users table")
             await conn.run_sync(_check_and_add)
 
     @asynccontextmanager
@@ -87,7 +96,9 @@ class DatabaseService:
                 user.first_name = first_name
                 user.last_name = last_name
                 user.language_code = language_code
-                user.last_active_at = datetime.now(timezone.utc)
+                now = datetime.now(timezone.utc)
+                if not user.last_active_at or (now - user.last_active_at.replace(tzinfo=timezone.utc if user.last_active_at.tzinfo is None else None)).total_seconds() > 300:
+                    user.last_active_at = now
                 return user
 
             user = User(
@@ -195,6 +206,39 @@ class DatabaseService:
             await session.flush()
             return book
 
+    async def bulk_upsert_books_by_external_id(self, books_data: List[dict]) -> List[Book]:
+        """Upsert a collection of books in a single transaction."""
+        if not books_data:
+            return []
+        async with self.session() as session:
+            ext_ids = [str(b.get("external_id")) for b in books_data if b.get("external_id")]
+            existing_books: dict[str, Book] = {}
+            if ext_ids:
+                result = await session.execute(
+                    select(Book).where(Book.external_id.in_(ext_ids))
+                )
+                for b in result.scalars().all():
+                    if b.external_id:
+                        existing_books[str(b.external_id)] = b
+
+            stored_books: List[Book] = []
+            for b_data in books_data:
+                ext_id = str(b_data.get("external_id")) if b_data.get("external_id") else None
+                existing = existing_books.get(ext_id) if ext_id else None
+                if existing:
+                    for key, value in b_data.items():
+                        if key not in ("id", "external_id"):
+                            setattr(existing, key, value)
+                    stored_books.append(existing)
+                else:
+                    book = Book(**b_data)
+                    session.add(book)
+                    if ext_id:
+                        existing_books[ext_id] = book
+                    stored_books.append(book)
+            await session.flush()
+            return stored_books
+
     async def get_book(self, book_id: str) -> Optional[Book]:
         async with self.session() as session:
             result = await session.execute(
@@ -203,6 +247,18 @@ class DatabaseService:
                 .where(Book.id == book_id, Book.is_active == True)
             )
             return result.scalar_one_or_none()
+
+    async def get_books_by_ids(self, book_ids: List[str]) -> List[Book]:
+        if not book_ids:
+            return []
+        async with self.session() as session:
+            result = await session.execute(
+                select(Book)
+                .options(joinedload(Book.category))
+                .where(Book.id.in_(book_ids), Book.is_active == True)
+            )
+            books_map = {b.id: b for b in result.scalars().all()}
+            return [books_map[b_id] for b_id in book_ids if b_id in books_map]
 
     async def get_book_by_external_id(self, external_id: str) -> Optional[Book]:
         async with self.session() as session:
@@ -527,6 +583,185 @@ class DatabaseService:
 
     async def get_users_by_page(self, page: int, per_page: int = 10) -> tuple[List[User], int]:
         return await self.get_all_users(page=page, per_page=per_page)
+
+    # BookAlert operations
+
+    async def create_book_alert(self, user_id: int, query: str) -> BookAlert:
+        async with self.session() as session:
+            alert = BookAlert(user_id=user_id, query=query)
+            session.add(alert)
+            await session.flush()
+            return alert
+
+    async def get_user_alerts(self, user_id: int) -> List[BookAlert]:
+        async with self.session() as session:
+            result = await session.execute(
+                select(BookAlert).where(BookAlert.user_id == user_id).order_by(desc(BookAlert.created_at))
+            )
+            return list(result.scalars().all())
+
+    async def delete_book_alert(self, alert_id: int, user_id: int) -> bool:
+        async with self.session() as session:
+            result = await session.execute(
+                delete(BookAlert).where(BookAlert.id == alert_id, BookAlert.user_id == user_id)
+            )
+            return result.rowcount > 0
+
+    async def get_all_active_alerts(self) -> List[BookAlert]:
+        async with self.session() as session:
+            result = await session.execute(
+                select(BookAlert).where(BookAlert.is_active == True)
+            )
+            return list(result.scalars().all())
+
+    async def update_alert_checked(self, alert_id: int, notified: bool = False) -> None:
+        now = datetime.now(timezone.utc)
+        values: dict = {"last_checked_at": now}
+        if notified:
+            values["last_notified_at"] = now
+        async with self.session() as session:
+            await session.execute(
+                update(BookAlert).where(BookAlert.id == alert_id).values(**values)
+            )
+
+    # ReadingStatus operations
+
+    async def set_reading_status(self, user_id: int, book_id: str, status: str) -> ReadingStatus:
+        now = datetime.now(timezone.utc)
+        async with self.session() as session:
+            result = await session.execute(
+                select(ReadingStatus).where(
+                    ReadingStatus.user_id == user_id, ReadingStatus.book_id == book_id
+                )
+            )
+            rs = result.scalar_one_or_none()
+            if rs:
+                rs.status = status
+                rs.updated_at = now
+                return rs
+            rs = ReadingStatus(user_id=user_id, book_id=book_id, status=status, updated_at=now)
+            session.add(rs)
+            await session.flush()
+            return rs
+
+    async def get_reading_status(self, user_id: int, book_id: str) -> Optional[ReadingStatus]:
+        async with self.session() as session:
+            result = await session.execute(
+                select(ReadingStatus).where(
+                    ReadingStatus.user_id == user_id, ReadingStatus.book_id == book_id
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def get_user_reading_shelf(
+        self, user_id: int, status: Optional[str] = None, page: int = 1, per_page: int = 10
+    ) -> tuple[list, int]:
+        async with self.session() as session:
+            base = select(ReadingStatus).where(ReadingStatus.user_id == user_id)
+            if status:
+                base = base.where(ReadingStatus.status == status)
+
+            count_result = await session.execute(select(func.count()).select_from(base.subquery()))
+            total = count_result.scalar() or 0
+
+            result = await session.execute(
+                base.order_by(desc(ReadingStatus.updated_at))
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+            )
+            return list(result.scalars().all()), total
+
+    async def remove_reading_status(self, user_id: int, book_id: str) -> bool:
+        async with self.session() as session:
+            result = await session.execute(
+                delete(ReadingStatus).where(
+                    ReadingStatus.user_id == user_id, ReadingStatus.book_id == book_id
+                )
+            )
+            return result.rowcount > 0
+
+    # DailyStats operations
+
+    async def get_or_create_daily_stats(self, date_str: str) -> DailyStats:
+        async with self.session() as session:
+            result = await session.execute(
+                select(DailyStats).where(DailyStats.date == date_str)
+            )
+            stats = result.scalar_one_or_none()
+            if stats:
+                return stats
+            stats = DailyStats(date=date_str)
+            session.add(stats)
+            await session.flush()
+            return stats
+
+    async def increment_daily_stat(self, field: str) -> None:
+        from datetime import date as _date
+        date_str = _date.today().isoformat()
+        allowed = {"new_users", "total_downloads", "total_searches"}
+        if field not in allowed:
+            raise ValueError(f"Invalid field '{field}'. Allowed: {allowed}")
+        async with self.session() as session:
+            result = await session.execute(
+                select(DailyStats).where(DailyStats.date == date_str)
+            )
+            stats = result.scalar_one_or_none()
+            if not stats:
+                stats = DailyStats(date=date_str)
+                session.add(stats)
+                await session.flush()
+            current = getattr(stats, field)
+            setattr(stats, field, current + 1)
+
+    async def get_weekly_stats(self) -> List[DailyStats]:
+        from datetime import date as _date, timedelta
+        today = _date.today()
+        dates = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+        async with self.session() as session:
+            result = await session.execute(
+                select(DailyStats)
+                .where(DailyStats.date.in_(dates))
+                .order_by(DailyStats.date)
+            )
+            return list(result.scalars().all())
+
+    # Referral operations
+
+    async def get_or_create_referral_code(self, user_id: int) -> str:
+        import random
+        import string
+        async with self.session() as session:
+            result = await session.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            if not user:
+                raise ValueError(f"User {user_id} not found")
+            if user.referral_code:
+                return user.referral_code
+            chars = string.ascii_letters + string.digits
+            while True:
+                code = "".join(random.choices(chars, k=8))
+                existing = await session.execute(select(User).where(User.referral_code == code))
+                if not existing.scalar_one_or_none():
+                    break
+            user.referral_code = code
+            return code
+
+    async def apply_referral(self, new_user_id: int, referral_code: str) -> bool:
+        async with self.session() as session:
+            ref_result = await session.execute(
+                select(User).where(User.referral_code == referral_code)
+            )
+            referrer = ref_result.scalar_one_or_none()
+            if not referrer or referrer.id == new_user_id:
+                return False
+
+            new_result = await session.execute(select(User).where(User.id == new_user_id))
+            new_user = new_result.scalar_one_or_none()
+            if not new_user or new_user.referrer_id is not None:
+                return False
+
+            new_user.referrer_id = referrer.id
+            return True
 
 
 db = DatabaseService()

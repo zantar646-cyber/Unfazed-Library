@@ -16,6 +16,14 @@ class RateLimitMiddleware(BaseMiddleware):
         self.user_requests: Dict[int, List[float]] = defaultdict(list)
         self.max_requests = settings.rate_limit_per_user
         self.window = settings.rate_limit_window
+        self._last_cleanup: float = time.monotonic()
+
+    def _cleanup_stale_users(self, now: float) -> None:
+        cutoff = now - self.window
+        stale_keys = [uid for uid, history in self.user_requests.items() if not history or history[-1] <= cutoff]
+        for uid in stale_keys:
+            self.user_requests.pop(uid, None)
+        self._last_cleanup = now
 
     async def __call__(
         self,
@@ -27,6 +35,9 @@ class RateLimitMiddleware(BaseMiddleware):
             user_id = event.from_user.id if event.from_user else None
             if user_id:
                 now = time.monotonic()
+                if (now - self._last_cleanup > 300) or len(self.user_requests) > 1000:
+                    self._cleanup_stale_users(now)
+
                 user_history = self.user_requests[user_id]
                 cutoff = now - self.window
 

@@ -35,6 +35,13 @@ async def callback_ai_action(callback: CallbackQuery, db_user: Optional[DBUser] 
     action = parts[1]
     book_id = parts[2]
 
+    if not ai.available:
+        await callback.answer(
+            "AI features are currently unavailable (no OpenAI API key configured).",
+            show_alert=True,
+        )
+        return
+
     book = await db.get_book(book_id)
     if not book:
         await callback.message.edit_text(get_text("book_not_found", lang))
@@ -44,6 +51,16 @@ async def callback_ai_action(callback: CallbackQuery, db_user: Optional[DBUser] 
     title = book.title
     author = book.author
     description = book.description
+
+    if action == "menu":
+        await callback.message.edit_text(
+            f"✨ <b>AI Insights: {sanitize_html(title)}</b>\n\nChoose an AI tool below:",
+            reply_markup=ai_action_keyboard(book_id, lang),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
     ai_header = get_text(AI_KEYS.get(action, "ai_summary"), lang)
 
     if action == "question":

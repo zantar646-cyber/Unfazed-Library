@@ -49,8 +49,13 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc), nullable=False
     )
 
+    referral_code: Mapped[Optional[str]] = mapped_column(String(20), unique=True, nullable=True, index=True)
+    referrer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
+
     downloads: Mapped[list["Download"]] = relationship("Download", back_populates="user", lazy="selectin")
     favorites: Mapped[list["Favorite"]] = relationship("Favorite", back_populates="user", lazy="selectin")
+    alerts: Mapped[list["BookAlert"]] = relationship("BookAlert", back_populates="user", lazy="selectin")
+    reading_statuses: Mapped[list["ReadingStatus"]] = relationship("ReadingStatus", back_populates="user", lazy="selectin")
 
 
 class Book(Base):
@@ -154,3 +159,46 @@ class AdminLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+
+
+class BookAlert(Base):
+    __tablename__ = "book_alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    query: Mapped[str] = mapped_column(String(500), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(), nullable=True)
+    last_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="alerts", lazy="selectin")
+
+
+class ReadingStatus(Base):
+    __tablename__ = "reading_statuses"
+    __table_args__ = (UniqueConstraint("user_id", "book_id", name="uq_user_book_reading_status"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    book_id: Mapped[str] = mapped_column(String(36), ForeignKey("books.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # 'want_to_read', 'reading', 'finished'
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="reading_statuses", lazy="selectin")
+    book: Mapped["Book"] = relationship("Book", lazy="selectin")
+
+
+class DailyStats(Base):
+    __tablename__ = "daily_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[str] = mapped_column(String(10), unique=True, nullable=False, index=True)
+    new_users: Mapped[int] = mapped_column(Integer, default=0)
+    total_downloads: Mapped[int] = mapped_column(Integer, default=0)
+    total_searches: Mapped[int] = mapped_column(Integer, default=0)

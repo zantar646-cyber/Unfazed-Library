@@ -194,3 +194,18 @@ async def test_process_download_http_phase_runs_for_non_cf_url():
 
         mock_dl.assert_called()
         mock_browser.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_book_handler_has_store_search_results():
+    from bot.handlers.book import _store_search_results
+
+    assert callable(_store_search_results)
+
+
+def test_dispatcher_includes_all_routers():
+    from main import create_dispatcher
+
+    dp = create_dispatcher()
+    # Verify all sub_routers are registered (user, book, shelf, alerts, reader, bookclub, inline, ai_features, admin)
+    assert len(dp.sub_routers) == 9

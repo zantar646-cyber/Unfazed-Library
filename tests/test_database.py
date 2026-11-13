@@ -112,3 +112,35 @@ async def test_book_string_id(db_session):
     result = await db_session.execute(select(Book).where(Book.id == "custom-id-123"))
     fetched = result.scalar_one()
     assert fetched.title == "Custom ID Book"
+
+
+@pytest.mark.asyncio
+async def test_bulk_upsert_books():
+    from bot.database.service import db
+
+    books_data = [
+        {"external_id": "ext-test-1", "title": "Book 1", "author": "Author A", "download_count": 5},
+        {"external_id": "ext-test-2", "title": "Book 2", "author": "Author B", "download_count": 10},
+    ]
+
+    stored = await db.bulk_upsert_books_by_external_id(books_data)
+    assert len(stored) == 2
+    assert stored[0].title == "Book 1"
+    assert stored[1].title == "Book 2"
+
+    # Now update Book 1 and add Book 3 in the same batch
+    updated_data = [
+        {"external_id": "ext-test-1", "title": "Book 1 Updated", "author": "Author A", "download_count": 8},
+        {"external_id": "ext-test-3", "title": "Book 3", "author": "Author C", "download_count": 1},
+    ]
+    stored_updated = await db.bulk_upsert_books_by_external_id(updated_data)
+    assert len(stored_updated) == 2
+    assert stored_updated[0].title == "Book 1 Updated"
+    assert stored_updated[0].id == stored[0].id  # Keeps same primary key
+    assert stored_updated[1].title == "Book 3"
+
+    # Test get_books_by_ids
+    fetched_books = await db.get_books_by_ids([stored_updated[0].id, stored_updated[1].id])
+    assert len(fetched_books) == 2
+    assert fetched_books[0].id == stored_updated[0].id
+    assert fetched_books[1].id == stored_updated[1].id

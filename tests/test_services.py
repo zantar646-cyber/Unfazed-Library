@@ -96,3 +96,82 @@ def test_api_response():
     response2 = APIResponse(data=None)
     assert response2.data is None
     assert response2.cached is False
+
+
+@pytest.mark.asyncio
+async def test_cache_service_in_memory_fallback():
+    from bot.services.cache import CacheService
+
+    cache_svc = CacheService()
+    # Force fallback mode by leaving _redis as None
+    cache_svc._redis = None
+
+    assert await cache_svc.set("test_key", {"title": "Book Test"}, ttl=60) is True
+    assert await cache_svc.exists("test_key") is True
+
+    val = await cache_svc.get("test_key")
+    assert val == {"title": "Book Test"}
+
+    assert await cache_svc.increment("counter_key", 1) == 1
+    assert await cache_svc.increment("counter_key", 2) == 3
+
+    assert await cache_svc.clear_pattern("test_*") == 1
+    assert await cache_svc.exists("test_key") is False
+
+    await cache_svc.close()
+
+
+def test_deduplicate_results_fast():
+    import time
+    from bot.sources.dedup import deduplicate_results
+
+    # Generate 300 books with duplicates and variations
+    books = []
+    for i in range(150):
+        books.append(BookResult(id=f"id-{i}-epub", title=f"Sample Book {i % 30}", extension="epub"))
+        books.append(BookResult(id=f"id-{i}-pdf", title=f"Sample Book {i % 30}", extension="pdf"))
+
+    t0 = time.monotonic()
+    deduped = deduplicate_results(books)
+    elapsed = time.monotonic() - t0
+
+    assert len(deduped) == 30
+    # Must run in well under 0.1s (previously took several seconds)
+    assert elapsed < 0.2
+
+
+@pytest.mark.asyncio
+async def test_search_progressive_enrichment():
+    from bot.services.search import search_service
+    from bot.sources.router import source_router
+
+    batch1 = [BookResult(id=f"init-{i}", title=f"Initial Book {i}") for i in range(10)]
+    batch2 = [BookResult(id=f"more-{i}", title=f"Enriched Book {i}") for i in range(15)]
+
+    with (
+        patch.object(source_router, "search_first_batch", AsyncMock(return_value=(batch1, 25))),
+        patch.object(source_router, "search_more_batches", AsyncMock(return_value=batch1 + batch2)),
+    ):
+        # 1. Page 1 returns immediately
+        p1_books, initial_total, from_cache = await search_service.search(
+            user_id=88888, query="test progressive", page=1, per_page=10
+        )
+        assert len(p1_books) == 10
+        assert p1_books[0].title == "Initial Book 0"
+        assert initial_total == 25
+        assert from_cache is False
+
+        # Wait for background task to complete enrichment
+        session = search_service.get_session(88888)
+        assert session is not None
+        if session.background_task:
+            await session.background_task
+
+        # 2. Page 2 returns the updated books found in the background
+        p2_books, updated_total, from_cache2 = await search_service.search(
+            user_id=88888, query="test progressive", page=2, per_page=10
+        )
+        assert from_cache2 is True
+        assert len(p2_books) == 10
+        assert updated_total == 25
+        assert p2_books[0].title == "Enriched Book 0"

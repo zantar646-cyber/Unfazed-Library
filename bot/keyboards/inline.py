@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.config.settings import settings
 from bot.database.models import Book, Category
 from bot.utils.helpers import LANGUAGES, language_flag
 from bot.utils.i18n import get_text
@@ -18,6 +19,8 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="\U0001f4f0 Latest Books", callback_data="books:latest")
     builder.button(text="\u2764\ufe0f My Favorites", callback_data="favorites:list:1")
     builder.button(text="\U0001f4cb Download History", callback_data="history:list:1")
+    builder.button(text="\U0001f4d6 My Shelf", callback_data="shelf:menu")
+    builder.button(text="\U0001f514 Alerts", callback_data="alerts:list")
     builder.button(text="\U0001f1ec\U0001f1e7 Language", callback_data="lang:menu")
     builder.button(text="\u2753 Help", callback_data="help")
     builder.adjust(2)
@@ -56,6 +59,7 @@ def book_list_keyboard(
     total_pages: int,
     action_prefix: str = "book",
     back_callback: str = "menu",
+    active_format: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for book in books:
@@ -80,8 +84,29 @@ def book_list_keyboard(
         )
     if nav_buttons:
         builder.row(*nav_buttons)
+    # Format filter row — only shown for search results
+    if action_prefix == "search":
+        fmt_buttons = []
+        for label, fmt in [("PDF", "pdf"), ("EPUB", "epub"), ("MOBI", "mobi"), ("All", "all")]:
+            prefix = "✓ " if active_format == fmt or (fmt == "all" and not active_format) else ""
+            fmt_buttons.append(
+                InlineKeyboardButton(
+                    text=f"{prefix}{label}",
+                    callback_data=f"search:format:{fmt}",
+                )
+            )
+        builder.row(*fmt_buttons)
     builder.row(InlineKeyboardButton(text="Back", callback_data=back_callback))
     return builder.as_markup()
+
+
+def language_toggle_button(current_lang: Optional[str], action_prefix: str) -> InlineKeyboardButton:
+    """Return a single InlineKeyboardButton that toggles the search language filter."""
+    lang_label = current_lang.upper() if current_lang else "Any"
+    return InlineKeyboardButton(
+        text=f"\U0001f30d Lang: {lang_label}",
+        callback_data="search:lang:toggle",
+    )
 
 
 def book_detail_keyboard(
@@ -100,7 +125,13 @@ def book_detail_keyboard(
     )
     builder.row(
         InlineKeyboardButton(text="\U0001f4d6 Description", callback_data=f"desc:{book_id}"),
+        InlineKeyboardButton(text="🔖 Shelf", callback_data=f"shelf:choose:{book_id}"),
+        InlineKeyboardButton(text="📖 Read", callback_data=f"read:{book_id}:0:0"),
     )
+    if settings.openai_api_key:
+        builder.row(
+            InlineKeyboardButton(text="✨ AI Insights", callback_data=f"ai:menu:{book_id}"),
+        )
     builder.row(InlineKeyboardButton(text="\u2b05\ufe0f Back", callback_data=back_callback))
     return builder.as_markup()
 

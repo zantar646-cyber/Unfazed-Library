@@ -42,6 +42,10 @@ from bot.utils.i18n import get_text
 router = Router()
 
 
+async def _store_search_results(results) -> list:
+    return await search_service.store_search_results(results)
+
+
 @router.callback_query(F.data.startswith("categories:list:"))
 async def callback_categories_list(callback: CallbackQuery, db_user: Optional[DBUser] = None) -> None:
     lang = db_user.preferred_language if db_user else None

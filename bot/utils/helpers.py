@@ -31,11 +31,22 @@ def is_real_file(data: bytes, expected_format: str) -> bool:
 
 
 def set_search_query(user_id: int, query: str) -> None:
+    if len(_search_queries) > 1000:
+        _search_queries.clear()
     _search_queries[user_id] = query
 
 
 def get_search_query(user_id: int) -> str:
-    return _search_queries.get(user_id, "")
+    if user_id in _search_queries:
+        return _search_queries[user_id]
+    try:
+        from bot.services.search import search_service
+        sess = search_service.get_session(user_id)
+        if sess and sess.query:
+            return sess.query
+    except Exception:
+        pass
+    return ""
 
 
 def format_file_size(size_bytes: Optional[int]) -> str:

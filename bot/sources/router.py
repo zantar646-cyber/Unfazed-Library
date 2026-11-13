@@ -11,18 +11,128 @@ from bot.sources.annas_archive import FORMAT_PRIORITY, AnnasArchiveBook, annas_a
 from bot.sources.dedup import deduplicate_results, rank_results
 from bot.sources.zlibrary import zlibrary
 
-# Maximum number of ZL pages to fetch (safety cap).
-# At BATCH_SIZE=100 this allows up to 5000 results.
-MAX_SEARCH_PAGES = 50
+# Maximum number of ZL pages to fetch for instant responsiveness.
+# Page 1 alone returns up to 100 books (10 full Telegram pages).
+MAX_SEARCH_PAGES = 2
 # Limit concurrent ZL page fetches to avoid overwhelming the API.
-ZL_FETCH_CONCURRENCY = 3
+ZL_FETCH_CONCURRENCY = 2
 
 
 class SourceRouter:
     """Orchestrates multi-source book search and download.
 
-    This class is stateless — all search caching lives in SearchService.
+    Supports instant initial batch returns with progressive background enrichment.
     """
+
+    async def search_first_batch(
+        self,
+        query: str,
+        per_page: int = 50,
+        language: Optional[str] = None,
+    ) -> Tuple[list, int]:
+        """Fetch Page 1 immediately (~0.5s) to display to the user without waiting."""
+        t0 = time.monotonic()
+        first, total = await self._try_zl_search(query, 1, per_page, language)
+        if not first:
+            # Fallback if ZL is empty: try Anna's Archive quickly
+            aa_results, aa_total = await self._try_annas_search(query, 1, per_page)
+            if aa_results:
+                for r in aa_results:
+                    r._source = "Anna's Archive"
+                ranked = rank_results(deduplicate_results(aa_results), query)
+                return ranked, len(ranked)
+            return [], 0
+
+        for r in first:
+            r._source = "Z-Library"
+
+        deduped = deduplicate_results(first)
+        ranked = rank_results(deduped, query)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            f"Search first-batch '{query}': {len(ranked)} books in {elapsed:.3f}s (reported total={total})"
+        )
+        return ranked, total
+
+    async def search_more_batches(
+        self,
+        query: str,
+        per_page: int = 50,
+        language: Optional[str] = None,
+        existing: Optional[list] = None,
+        max_pages: int = 4,
+    ) -> list:
+        """Fetch remaining batches in the background to enrich the user's session."""
+        t0 = time.monotonic()
+        existing_list = list(existing or [])
+
+        async def _fetch_aa():
+            try:
+                async with asyncio.timeout(3.0):
+                    res, _ = await self._try_annas_search(query, 1, per_page)
+                    for r in res:
+                        r._source = "Anna's Archive"
+                    return res
+            except Exception as e:
+                logger.debug(f"Background AA fetch failed: {e}")
+                return []
+
+        async def _fetch_zl_remaining():
+            more_zl: list = []
+            sem = asyncio.Semaphore(ZL_FETCH_CONCURRENCY)
+
+            async def _fetch_page(p: int) -> list:
+                async with sem:
+                    more, _ = await self._try_zl_search(query, p, per_page, language)
+                    for r in more:
+                        r._source = "Z-Library"
+                    return more or []
+
+            tasks = [_fetch_page(p) for p in range(2, max_pages + 1)]
+            for coro in asyncio.as_completed(tasks):
+                try:
+                    more_zl.extend(await coro)
+                except Exception as e:
+                    logger.debug(f"Background ZL page fetch failed: {e}")
+            return more_zl
+
+        async def _fetch_openlibrary():
+            try:
+                from bot.sources.openlibrary import OpenLibrarySource
+                async with asyncio.timeout(3.5):
+                    res, _ = await OpenLibrarySource().search(query, per_page=15, language=language)
+                    return res
+            except Exception as e:
+                logger.debug(f"Background OpenLibrary fetch failed: {e}")
+                return []
+
+        async def _fetch_libgen():
+            try:
+                from bot.sources.libgen import LibGenSource
+                async with asyncio.timeout(3.5):
+                    res, _ = await LibGenSource().search(query, per_page=15, language=language)
+                    return res
+            except Exception as e:
+                logger.debug(f"Background LibGen fetch failed: {e}")
+                return []
+
+        aa_results, zl_results, ol_results, lg_results = await asyncio.gather(
+            _fetch_aa(), _fetch_zl_remaining(), _fetch_openlibrary(), _fetch_libgen(), return_exceptions=True
+        )
+        aa_list = aa_results if isinstance(aa_results, list) else []
+        zl_list = zl_results if isinstance(zl_results, list) else []
+        ol_list = ol_results if isinstance(ol_results, list) else []
+        lg_list = lg_results if isinstance(lg_results, list) else []
+
+        combined = existing_list + zl_list + aa_list + ol_list + lg_list
+        deduped = deduplicate_results(combined)
+        ranked = rank_results(deduped, query)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            f"Search more-batches '{query}': {len(existing_list)} existing + {len(zl_list)} ZL + {len(aa_list)} AA + {len(ol_list)} OL + {len(lg_list)} LG "
+            f"-> {len(ranked)} total unique in {elapsed:.3f}s"
+        )
+        return ranked
 
     async def search_books(
         self,
@@ -31,74 +141,8 @@ class SourceRouter:
         per_page: int = 10,
         language: Optional[str] = None,
     ) -> Tuple[list, int]:
-        """Fetch, deduplicate, rank and return *all* unique books for *query*.
-
-        Unlike the name suggests this ignores *page* — it retrieves every
-        available result from Z-Library (paginating internally), combines
-        them with Anna's Archive results, deduplicates, ranks, and returns
-        the full set.  Callers (SearchService) are responsible for slicing
-        into pages for the user.
-
-        Returns (list[BookResult], total_count).
-        """
-        t0 = time.monotonic()
-
-        # Search both sources concurrently.
-        # AA: one-shot fetch (no pagination metadata from AA).
-        # ZL: fetch ALL pages so the cache holds the complete dataset.
-        aa_task = self._try_annas_search(query, page, per_page)
-        zl_task = self._try_zl_search_all(query, per_page, language)
-
-        aa_results, zl_results = await asyncio.gather(aa_task, zl_task, return_exceptions=True)
-
-        if isinstance(aa_results, Exception):
-            logger.warning(f"AA search failed for '{query}': {aa_results}")
-            aa_results = []
-        if isinstance(zl_results, Exception):
-            logger.warning(f"ZL search failed for '{query}': {zl_results}")
-            zl_results = []
-
-        aa_list, aa_total = aa_results if isinstance(aa_results, tuple) else (aa_results, 0)
-        zl_list, zl_total = zl_results if isinstance(zl_results, tuple) else (zl_results, 0)
-
-        if not aa_list and not zl_list:
-            logger.warning(f"Both sources returned no results for '{query}'")
-            return [], 0
-
-        t1 = time.monotonic()
-
-        # Tag each result with its source
-        for r in zl_list:
-            r._source = "Z-Library"
-        for r in aa_list:
-            r._source = "Anna's Archive"
-
-        # Combine all results (keeping duplicates for dedup)
-        combined = zl_list + aa_list
-
-        # Deduplicate by normalized title + fuzzy matching
-        deduped = deduplicate_results(combined)
-
-        # Rank by relevance to the query
-        ranked = rank_results(deduped, query)
-
-        # ── Return the FULL dataset ───────────────────────────────
-        # The caller (SearchService) slices into pages for display.
-        # NEVER truncate here — doing so causes empty pages later.
-        final = ranked  # was: ranked[:per_page]
-
-        # The authoritative total is the number of books we actually
-        # have.  ZL's reported total may be larger (unfetched pages)
-        # or smaller (AA contributed extra unique books).
-        total = len(final)
-        elapsed = time.monotonic() - t0
-        logger.info(
-            f"Search '{query}': {len(aa_list)} AA + {len(zl_list)} ZL "
-            f"-> {len(deduped)} unique -> {len(final)} total "
-            f"(zl_api_total={zl_total}, ranking={t1-t0:.3f}s, elapsed={elapsed:.3f}s)"
-        )
-
-        return final, total
+        """Fetch, deduplicate, rank and return books for query."""
+        return await self.search_first_batch(query, per_page=per_page, language=language)
 
     async def _try_zl_search(
         self, query: str, page: int, per_page: int, language: Optional[str]
@@ -125,6 +169,13 @@ class SourceRouter:
         first, total = await self._try_zl_search(query, 1, per_page, language)
         if not first:
             return [], 0
+
+        # Fast path: 1 page of 100 results already provides 10 Telegram pages!
+        # If we have at least 20 books or total <= len(first), return immediately.
+        if len(first) >= 20 or total <= len(first):
+            elapsed = time.monotonic() - t0
+            logger.info(f"ZL search fast-return: {len(first)} results in {elapsed:.2f}s")
+            return first, total
 
         all_results: list = list(first)
         total_pages = (total + per_page - 1) // per_page
@@ -298,3 +349,12 @@ class SourceRouter:
 
 
 source_router = SourceRouter()
+
+
+async def search_first_batch(query: str, per_page: int = 50, language: Optional[str] = None):
+    return await source_router.search_first_batch(query, per_page=per_page, language=language)
+
+
+async def search_more_batches(query: str, per_page: int = 50, language: Optional[str] = None, existing: Optional[list] = None, max_pages: int = 4):
+    return await source_router.search_more_batches(query, per_page=per_page, language=language, existing=existing, max_pages=max_pages)
+

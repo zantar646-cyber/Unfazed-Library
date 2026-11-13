@@ -532,18 +532,18 @@ class APIService:
 
         last_error = None
 
-        # Attempt 1: GET /search?q=... (most standard, likely to respect query)
+        # Attempt 1: POST /eapi/book/search (form-encoded) — Fastest and primary for modern Z-Lib mirrors
         try:
-            books, total = await self._try_get_search(get_url, get_params, cookies)
+            books, total = await self._try_eapi_form(eapi_url, form_data, cookies)
             if books:
-                logger.success(f"  [method=GET /search] {len(books)} books, total={total}")
+                logger.success(f"  [method=EAPI form] {len(books)} books, total={total}")
                 for b in books[:3]:
                     logger.info(f"    [{b.id}] {b.title} / {b.author}")
                 if await self._accept_results(query, books):
                     return books, total
         except Exception as e:
             last_error = e
-            logger.warning(f"  [method=GET /search] FAILED: {e}")
+            logger.warning(f"  [method=EAPI form] FAILED: {e}")
 
         # Attempt 2: POST /eapi/book/search (JSON)
         try:
@@ -558,18 +558,18 @@ class APIService:
             last_error = e
             logger.warning(f"  [method=EAPI JSON] FAILED: {e}")
 
-        # Attempt 3: POST /eapi/book/search (form-encoded)
+        # Attempt 3: GET /search?q=... (legacy fallback)
         try:
-            books, total = await self._try_eapi_form(eapi_url, form_data, cookies)
+            books, total = await self._try_get_search(get_url, get_params, cookies)
             if books:
-                logger.success(f"  [method=EAPI form] {len(books)} books, total={total}")
+                logger.success(f"  [method=GET /search] {len(books)} books, total={total}")
                 for b in books[:3]:
                     logger.info(f"    [{b.id}] {b.title} / {b.author}")
                 if await self._accept_results(query, books):
                     return books, total
         except Exception as e:
             last_error = e
-            logger.warning(f"  [method=EAPI form] FAILED: {e}")
+            logger.warning(f"  [method=GET /search] FAILED: {e}")
 
         # Attempt 4: POST hash endpoint (legacy), fallback to GET /search via _request
         try:

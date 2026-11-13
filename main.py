@@ -8,11 +8,12 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramUnauthorizedError
 from loguru import logger
 
 from bot.config.settings import settings
 from bot.database.service import db
-from bot.handlers import admin, book, user
+from bot.handlers import admin, ai_features, alerts, book, bookclub, inline_query, reader, shelf, user
 from bot.middlewares.auth import RegistrationMiddleware
 from bot.middlewares.logging import LoggingMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
@@ -26,6 +27,15 @@ from bot.utils.converter import cleanup_old_converter_files, get_converter_file_
 
 def setup_logging() -> None:
     logger.remove()
+    # Windows consoles often default to cp1252, which cannot encode the emoji and
+    # box-drawing characters used in our log messages. Force UTF-8 on stdout.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
     log_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
@@ -128,6 +138,12 @@ async def on_startup(bot: Bot) -> None:
     asyncio.create_task(periodic_mirror_check())
     asyncio.create_task(periodic_converter_cleanup())
 
+    from bot.handlers.alerts import run_alert_checker
+    asyncio.create_task(run_alert_checker(bot))
+
+    from bot.services.dashboard import start_web_dashboard
+    asyncio.create_task(start_web_dashboard(port=int(os.environ.get("DASHBOARD_PORT", 8085))))
+
     bot_info = await bot.get_me()
     logger.info(f"Bot started: @{bot_info.username} (ID: {bot_info.id})")
 
@@ -162,9 +178,20 @@ async def on_shutdown(bot: Bot) -> None:
 def create_dispatcher() -> Dispatcher:
     dp = Dispatcher()
 
-    dp.include_router(user.router)
-    dp.include_router(book.router)
-    dp.include_router(admin.router)
+    routers = [
+        user.router,
+        book.router,
+        shelf.router,
+        alerts.router,
+        reader.router,
+        bookclub.router,
+        inline_query.router,
+        ai_features.router,
+        admin.router,
+    ]
+    for r in routers:
+        r._parent_router = None
+        dp.include_router(r)
 
     dp.message.middleware(LoggingMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())
@@ -196,10 +223,16 @@ async def main() -> None:
     )
     dp = create_dispatcher()
 
-    await bot.delete_webhook(drop_pending_updates=True)
-
     try:
+        await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
+    except TelegramUnauthorizedError:
+        logger.error(
+            "Telegram rejected BOT_TOKEN (401 Unauthorized). "
+            "The token is invalid or was revoked - generate a new one via "
+            "@BotFather (/mybots -> API Token -> Revoke current token) "
+            "and update BOT_TOKEN in your .env file."
+        )
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:

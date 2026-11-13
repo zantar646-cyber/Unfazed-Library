@@ -6,12 +6,14 @@ from typing import Final, List
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# .env is this project's config source of truth. override=True prevents a stale
+# BOT_TOKEN left over in the ambient environment from silently winning.
+load_dotenv(override=True)
 
 
 @dataclass(frozen=True)
 class Settings:
-    bot_token: str = field(default_factory=lambda: os.getenv("BOT_TOKEN", ""))
+    bot_token: str = field(default_factory=lambda: os.getenv("BOT_TOKEN", "").strip())
     api_base_url: str = field(default_factory=lambda: os.getenv("API_BASE_URL", "").strip())
     api_key: str = field(default_factory=lambda: os.getenv("API_KEY", ""))
     zlibrary_email: str = field(default_factory=lambda: os.getenv("ZLIBRARY_EMAIL", ""))
@@ -70,15 +72,43 @@ class Settings:
         x.strip() for x in os.getenv("MIRRORS", "").split(",") if x.strip()
     ])
 
+    webhook_url: str = field(default_factory=lambda: os.getenv("WEBHOOK_URL", "").strip())
+    webhook_secret: str = field(default_factory=lambda: os.getenv("WEBHOOK_SECRET", "").strip())
+    database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", "")).strip())
+    is_vercel: bool = field(default_factory=lambda: bool(os.getenv("VERCEL")))
+
     @property
     def db_dsn(self) -> str:
+        if self.database_url:
+            url = self.database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif url.startswith("sqlite://") and not url.startswith("sqlite+aiosqlite://"):
+                url = url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+            return url
+
         if self.use_sqlite:
+            # On Vercel, the root filesystem is read-only, only /tmp is writable
+            if self.is_vercel or os.getenv("VERCEL"):
+                return f"sqlite+aiosqlite:////tmp/{self.db_name}.db"
             return f"sqlite+aiosqlite:///{self.db_name}.db"
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     @property
     def db_dsn_sync(self) -> str:
+        if self.database_url:
+            url = self.database_url
+            if url.startswith("postgresql+asyncpg://"):
+                url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            elif url.startswith("sqlite+aiosqlite://"):
+                url = url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+            return url
+
         if self.use_sqlite:
+            if self.is_vercel or os.getenv("VERCEL"):
+                return f"sqlite:////tmp/{self.db_name}.db"
             return f"sqlite:///{self.db_name}.db"
         return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 

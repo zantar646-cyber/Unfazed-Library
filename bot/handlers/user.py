@@ -32,8 +32,19 @@ router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, db_user: Optional[DBUser] = None) -> None:
+async def cmd_start(message: Message, command: CommandObject = None, db_user: Optional[DBUser] = None) -> None:
     lang = db_user.preferred_language if db_user else None
+
+    # Handle referral argument: /start ref_<code>
+    if command and command.args and command.args.startswith("ref_"):
+        code = command.args[4:]  # strip "ref_" prefix
+        try:
+            await db.apply_referral(message.from_user.id, code)
+        except AttributeError:
+            pass  # method not yet available; added by feat-models
+        except Exception as e:
+            logger.warning(f"apply_referral failed for code='{code}': {e}")
+
     await message.answer(get_text("start_welcome", lang), reply_markup=main_reply)
 
 
@@ -203,8 +214,7 @@ async def perform_search(message: Message, query: str, field: str = "all", db_us
 
 
 async def _store_search_results(results) -> list:
-    from bot.services.search import search_service
-    return await search_service._store_search_results(results)
+    return await search_service.store_search_results(results)
 
 
 @router.message(Command("latest"))
@@ -383,6 +393,7 @@ async def cmd_favorites(message: Message, db_user: Optional[DBUser] = None) -> N
 
 
 @router.message(F.text.lower() == "history")
+@router.message(F.text.lower() == "📋 history")
 @router.message(Command("history"))
 async def cmd_history(message: Message, db_user: Optional[DBUser] = None) -> None:
     if not db_user:
@@ -408,6 +419,152 @@ async def cmd_history(message: Message, db_user: Optional[DBUser] = None) -> Non
         text,
         reply_markup=pagination_keyboard(1, total_pages, "history", "menu"),
     )
+
+
+@router.message(Command("share"))
+async def cmd_share(message: Message, db_user: Optional[DBUser] = None) -> None:
+    if not db_user:
+        await message.answer("Please start the bot first with /start.")
+        return
+
+    lang = db_user.preferred_language if db_user else None
+
+    # Retrieve (or generate) the user's referral code
+    try:
+        code = await db.get_or_create_referral_code(db_user.id)
+    except AttributeError:
+        # Method not yet available — will be added by feat-models worker
+        await message.answer(
+            get_text("share_unavailable", lang) if get_text("share_unavailable", lang) != "share_unavailable"
+            else "🔗 Referral feature coming soon! Check back later.",
+        )
+        return
+
+    # Build the share link using bot username if obtainable
+    try:
+        bot_me = await message.bot.get_me()
+        bot_username = bot_me.username
+        share_link = f"https://t.me/{bot_username}?start=ref_{code}"
+    except Exception:
+        share_link = f"ref_{code}"
+
+    text = (
+        f"🔗 <b>Share this bot with friends!</b>\n\n"
+        f"Your referral link:\n<code>{share_link}</code>\n\n"
+        f"When a friend joins using your link, you'll both get rewards! 🎁"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("search:format:"))
+async def callback_search_format(callback: CallbackQuery, db_user: Optional[DBUser] = None) -> None:
+    if not db_user:
+        await callback.answer()
+        return
+
+    lang = db_user.preferred_language if db_user else None
+    fmt = callback.data.split(":")[-1]  # pdf / epub / mobi / all
+
+    user_id = callback.from_user.id
+    session = search_service.get_session(user_id)
+    if not session or not session.results:
+        await callback.answer("No active search session. Please search again.", show_alert=True)
+        return
+
+    # Store chosen format in session
+    session.format_filter = fmt if fmt != "all" else None
+
+    # Filter results
+    if fmt == "all":
+        filtered = session.results
+    else:
+        filtered = [b for b in session.results if getattr(b, "file_extension", "").lower() == fmt]
+
+    total_filtered = len(filtered)
+    per_page = 10
+    total_pages = max(1, calculate_pages(total_filtered, per_page))
+    page_books = filtered[:per_page]
+
+    from bot.keyboards.inline import book_list_keyboard
+
+    active_format = fmt if fmt != "all" else None
+    if not page_books:
+        await callback.answer(f"No {fmt.upper()} books in current results.", show_alert=True)
+        return
+
+    text = (
+        get_text("search_results", lang).format(total=total_filtered, query=sanitize_html(session.query))
+        + (f"\n<i>Filter: {fmt.upper()}</i>" if fmt != "all" else "")
+    )
+
+    await safe_edit_or_send(
+        callback.message,
+        text,
+        reply_markup=book_list_keyboard(
+            books=page_books,
+            page=1,
+            total_pages=total_pages,
+            action_prefix="search",
+            back_callback="menu",
+            active_format=active_format,
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "search:lang:toggle")
+async def callback_search_lang_toggle(callback: CallbackQuery, db_user: Optional[DBUser] = None) -> None:
+    if not db_user:
+        await callback.answer()
+        return
+
+    lang = db_user.preferred_language if db_user else None
+
+    # Toggle preferred_language: set → None, None → "english"
+    new_lang = None if lang else "english"
+
+    # Save to DB
+    try:
+        await db.update_user_language(db_user.id, new_lang)
+        db_user.preferred_language = new_lang
+    except Exception as e:
+        logger.warning(f"update_user_language failed: {e}")
+
+    # Re-run last search with updated language
+    user_id = callback.from_user.id
+    session = search_service.get_session(user_id)
+    if not session:
+        await callback.answer(
+            f"Language set to {new_lang or 'Any'}. Search again to apply.",
+            show_alert=True,
+        )
+        return
+
+    query = session.query
+    try:
+        books, total, _ = await search_service.search(user_id, query, page=1, language=new_lang)
+    except Exception as e:
+        logger.error(f"Re-search after lang toggle failed: {e}")
+        await callback.answer("Failed to refresh search results.", show_alert=True)
+        return
+
+    from bot.keyboards.inline import book_list_keyboard
+
+    total_pages = max(1, calculate_pages(total, 10))
+    text = get_text("search_results", new_lang).format(total=total, query=sanitize_html(query))
+
+    await safe_edit_or_send(
+        callback.message,
+        text,
+        reply_markup=book_list_keyboard(
+            books=books,
+            page=1,
+            total_pages=total_pages,
+            action_prefix="search",
+            back_callback="menu",
+        ),
+    )
+    await callback.answer(f"Language filter: {new_lang.capitalize() if new_lang else 'Any'}")
 
 
 @router.message()

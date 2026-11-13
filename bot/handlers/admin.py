@@ -85,6 +85,20 @@ async def show_dashboard(callback: CallbackQuery) -> None:
         for i, book in enumerate(top_books[:5], 1):
             text += f"{i}. {sanitize_html(book.title)} — {book.download_count} downloads\n"
 
+    try:
+        weekly = await db.get_weekly_stats()
+        if weekly:
+            text += "\n<b>📈 Last 7 Days (Downloads):</b>\n<pre>"
+            max_dl = max((s.total_downloads for s in weekly), default=1) or 1
+            for s in weekly:
+                day_label = s.date[5:]
+                bar_len = int((s.total_downloads / max_dl) * 10)
+                bar = "█" * bar_len + "░" * (10 - bar_len)
+                text += f"{day_label} {bar} {s.total_downloads}\n"
+            text += "</pre>\n"
+    except Exception as exc:
+        logger.warning(f"Error rendering weekly stats: {exc}")
+
     await callback.message.edit_text(text, reply_markup=admin_menu_keyboard())
 
 

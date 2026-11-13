@@ -57,6 +57,11 @@ class AnnasArchiveError(Exception):
     pass
 
 
+class AnnasArchiveBlockedError(AnnasArchiveError):
+    """Raised when AA returns 403 or Cloudflare challenge, which should not be retried."""
+    pass
+
+
 class AnnasArchive:
     def __init__(self) -> None:
         self.base_url = settings.annas_archive_base_url.rstrip("/")
@@ -131,9 +136,9 @@ class AnnasArchive:
         self._last_request_time = time.monotonic()
 
     @retry(
-        retry=retry_if_exception_type((httpx.HTTPError, asyncio.TimeoutError, AnnasArchiveError)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout)),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=0.5, min=1, max=2),
         after=after_log(logger, "WARNING"),
         before_sleep=before_sleep_log(logger, "DEBUG"),
     )
@@ -160,7 +165,7 @@ class AnnasArchive:
 
         if response.status_code == 403:
             logger.warning(f"AA blocked (403): {url}")
-            raise AnnasArchiveError("Blocked by CDN")
+            raise AnnasArchiveBlockedError("Blocked by CDN")
 
         if response.status_code == 404:
             raise AnnasArchiveError("Not found")
