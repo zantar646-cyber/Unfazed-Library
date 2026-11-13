@@ -11,6 +11,20 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 
+def _detect_use_sqlite() -> bool:
+    raw = os.getenv("USE_SQLITE", "").strip().lower()
+    if raw in ("false", "0", "no"):
+        return False
+    db_url = os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", "")).strip().lower()
+    if db_url and ("postgres" in db_url or "supabase" in db_url):
+        return False
+    if raw in ("true", "1", "yes"):
+        return True
+    if db_url and "sqlite" in db_url:
+        return True
+    return True
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str = field(default_factory=lambda: os.getenv("BOT_TOKEN", "").strip())
@@ -29,9 +43,12 @@ class Settings:
     annas_archive_cache_ttl_search: int = field(default_factory=lambda: int(os.getenv("ANNAS_ARCHIVE_CACHE_TTL_SEARCH", "3600")))
     annas_archive_cache_ttl_metadata: int = field(default_factory=lambda: int(os.getenv("ANNAS_ARCHIVE_CACHE_TTL_METADATA", "86400")))
 
-    use_sqlite: bool = field(
-        default_factory=lambda: os.getenv("USE_SQLITE", "true").lower() == "true"
-    )
+    use_sqlite: bool = field(default_factory=_detect_use_sqlite)
+
+    # Supabase credentials (optional, auto-configured when DATABASE_URL is set)
+    supabase_url: str = field(default_factory=lambda: os.getenv("SUPABASE_URL", "").strip())
+    supabase_anon_key: str = field(default_factory=lambda: os.getenv("SUPABASE_ANON_KEY", "").strip())
+    supabase_service_role_key: str = field(default_factory=lambda: os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip())
 
     db_host: str = field(default_factory=lambda: os.getenv("DB_HOST", "localhost"))
     db_port: int = field(default_factory=lambda: int(os.getenv("DB_PORT", "5432")))

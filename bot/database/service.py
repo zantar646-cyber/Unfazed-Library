@@ -27,9 +27,18 @@ class DatabaseService:
         if settings.use_sqlite:
             connect_args["check_same_thread"] = False
         else:
-            engine_kwargs["pool_size"] = settings.db_pool_min
-            engine_kwargs["max_overflow"] = settings.db_pool_max - settings.db_pool_min
-            engine_kwargs["pool_pre_ping"] = True
+            # PostgreSQL / Supabase
+            # Disable asyncpg prepared statement caching to support Supabase PgBouncer (transaction pooler)
+            connect_args["statement_cache_size"] = 0
+            connect_args["prepared_statement_cache_size"] = 0
+
+            if settings.is_vercel:
+                from sqlalchemy.pool import NullPool
+                engine_kwargs["poolclass"] = NullPool
+            else:
+                engine_kwargs["pool_size"] = settings.db_pool_min
+                engine_kwargs["max_overflow"] = settings.db_pool_max - settings.db_pool_min
+                engine_kwargs["pool_pre_ping"] = True
 
         self.engine = create_async_engine(
             settings.db_dsn,
@@ -49,20 +58,27 @@ class DatabaseService:
     async def _migrate(self) -> None:
         async with self.engine.begin() as conn:
             def _check_and_add(connection):
-                result = connection.execute(text("PRAGMA table_info(books)"))
-                cols = {row[1] for row in result}
-                if "source" not in cols:
-                    connection.execute(text("ALTER TABLE books ADD COLUMN source VARCHAR"))
-                    logger.info("Migrated: added 'source' column to books table")
+                dialect = connection.dialect.name
+                if dialect == "sqlite":
+                    result = connection.execute(text("PRAGMA table_info(books)"))
+                    cols = {row[1] for row in result}
+                    if "source" not in cols:
+                        connection.execute(text("ALTER TABLE books ADD COLUMN source VARCHAR"))
+                        logger.info("Migrated: added 'source' column to books table")
 
-                user_result = connection.execute(text("PRAGMA table_info(users)"))
-                user_cols = {row[1] for row in user_result}
-                if "referral_code" not in user_cols:
-                    connection.execute(text("ALTER TABLE users ADD COLUMN referral_code VARCHAR(20)"))
-                    logger.info("Migrated: added 'referral_code' column to users table")
-                if "referrer_id" not in user_cols:
-                    connection.execute(text("ALTER TABLE users ADD COLUMN referrer_id BIGINT"))
-                    logger.info("Migrated: added 'referrer_id' column to users table")
+                    user_result = connection.execute(text("PRAGMA table_info(users)"))
+                    user_cols = {row[1] for row in user_result}
+                    if "referral_code" not in user_cols:
+                        connection.execute(text("ALTER TABLE users ADD COLUMN referral_code VARCHAR(20)"))
+                        logger.info("Migrated: added 'referral_code' column to users table")
+                    if "referrer_id" not in user_cols:
+                        connection.execute(text("ALTER TABLE users ADD COLUMN referrer_id BIGINT"))
+                        logger.info("Migrated: added 'referrer_id' column to users table")
+                elif dialect == "postgresql":
+                    connection.execute(text("ALTER TABLE books ADD COLUMN IF NOT EXISTS source VARCHAR"))
+                    connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20)"))
+                    connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id BIGINT"))
+                    logger.info("Verified PostgreSQL columns exist (books.source, users.referral_code, users.referrer_id)")
             await conn.run_sync(_check_and_add)
 
     @asynccontextmanager

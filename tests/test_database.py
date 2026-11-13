@@ -144,3 +144,52 @@ async def test_bulk_upsert_books():
     assert len(fetched_books) == 2
     assert fetched_books[0].id == stored_updated[0].id
     assert fetched_books[1].id == stored_updated[1].id
+
+
+def test_supabase_settings_detection(monkeypatch):
+    from bot.config.settings import Settings
+
+    # Case 1: DATABASE_URL provided (Supabase Pooler)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres.myproject:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
+    )
+    monkeypatch.setenv("SUPABASE_URL", "https://myproject.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key-123")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "role-key-456")
+
+    s = Settings()
+    assert s.use_sqlite is False
+    assert s.db_dsn == "postgresql+asyncpg://postgres.myproject:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+    assert s.db_dsn_sync == "postgresql://postgres.myproject:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+    assert s.supabase_url == "https://myproject.supabase.co"
+    assert s.supabase_anon_key == "anon-key-123"
+    assert s.supabase_service_role_key == "role-key-456"
+
+    # Case 2: SQLite fallback when DATABASE_URL is empty
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.setenv("USE_SQLITE", "true")
+    s_sqlite = Settings()
+    assert s_sqlite.use_sqlite is True
+    assert "sqlite+aiosqlite" in s_sqlite.db_dsn
+
+
+def test_database_service_postgresql_pooler_config(monkeypatch):
+    from bot.config.settings import Settings
+    from bot.database.service import DatabaseService
+    import bot.database.service as svc
+
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://postgres.myproject:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
+    )
+    monkeypatch.setenv("VERCEL", "1")
+
+    monkeypatch.setattr(svc, "settings", Settings())
+    db_service = DatabaseService()
+
+    # Verify asyncpg engine was created with NullPool for serverless and statement_cache_size=0
+    assert db_service.engine.url.drivername == "postgresql+asyncpg"
+    from sqlalchemy.pool import NullPool
+    assert isinstance(db_service.engine.pool, NullPool)

@@ -96,11 +96,14 @@ async def handle_get_request(path: str, query_params: Dict[str, list[str]], host
         except Exception as e:
             bot_info = {"error": str(e)}
 
+        db_name = "postgresql (supabase)" if (not settings.use_sqlite and ("supabase" in settings.database_url or settings.supabase_url)) else ("postgresql" if not settings.use_sqlite else ("sqlite (tmp)" if settings.is_vercel else "sqlite"))
+
         return 200, {
             "status": "online",
             "platform": "Vercel Serverless",
             "bot": bot_info,
-            "database": "postgresql" if not settings.use_sqlite else ("sqlite (tmp)" if settings.is_vercel else "sqlite"),
+            "database": db_name,
+            "active_engine": "bot (full architecture)",
             "endpoints": {
                 "webhook": "/api/webhook",
                 "set_webhook": "/api/set_webhook",
