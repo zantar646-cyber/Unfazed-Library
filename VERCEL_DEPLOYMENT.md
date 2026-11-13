@@ -50,6 +50,12 @@ git push origin main
 
 *(If omitted and `USE_SQLITE=true`, the bot uses `/tmp/digital_library.db` which is writable).*
 
+### Optional Search Sources & Proxy
+- `ANNAS_ARCHIVE_BASE_URL`: e.g. `https://annas-archive.org` (official domains rotate: `.org` / `.se` / `.li`)
+- `ANNAS_ARCHIVE_SECRET_KEY`: Anna's Archive API secret (optional)
+- `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`: Route source requests through a proxy if Cloudflare blocks Vercel's IPs
+- `NO_PROXY`: Hosts that should bypass the proxy
+
 ### Optional Cache & Security
 - `REDIS_URL`: Upstash Redis connection string (falls back to in-memory cache if omitted)
 - `WEBHOOK_SECRET`: Secret string to authenticate Telegram updates
@@ -74,4 +80,4 @@ You will receive a confirmation JSON indicating the Telegram webhook has been re
 - **Live Status**: `https://your-app-name.vercel.app/`
 - **Webhook Diagnostics**: `https://your-app-name.vercel.app/api/webhook_info`
 - **Bot Telemetry**: `https://your-app-name.vercel.app/api/stats`
-- **Cron Alerts**: Automatically run every 6 hours via Vercel Cron at `/api/cron/alerts`
+- **Cron Alerts**: Automatically run once a day via Vercel Cron at `/api/cron/alerts`

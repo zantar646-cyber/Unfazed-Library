@@ -62,6 +62,7 @@ class SearchService:
         # Cache hit: same query + language, not expired
         if (
             session is not None
+            and session.results  # never serve a cached empty result
             and session.query == query
             and session.language == language
             and (now - session.timestamp) < CACHE_TTL_SECONDS
@@ -142,14 +143,10 @@ class SearchService:
             return [], 0, False
 
         if not results:
-            self._sessions[user_id] = SearchSession(
-                query=query,
-                results=[],
-                total=0,
-                current_page=1,
-                timestamp=now,
-                language=language,
-            )
+            # Do not cache empty results: a transient source outage must not
+            # mask retries for the next 30 minutes.
+            self._sessions.pop(user_id, None)
+            logger.info(f"Search returned no results for '{query}' (not cached)")
             return [], 0, False
 
         # Store first batch in database

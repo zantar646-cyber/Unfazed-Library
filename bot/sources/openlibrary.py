@@ -7,6 +7,7 @@ import aiohttp
 from loguru import logger
 
 from bot.services.api import BookResult
+from bot.utils.net import proxy_kwargs
 
 
 class OpenLibrarySource:
@@ -30,7 +31,9 @@ class OpenLibrarySource:
         try:
             timeout = aiohttp.ClientTimeout(total=8.0)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(self.BASE_URL, params=params) as resp:
+                async with session.get(
+                    self.BASE_URL, params=params, **proxy_kwargs(self.BASE_URL)
+                ) as resp:
                     if resp.status != 200:
                         logger.warning(f"OpenLibrary returned HTTP {resp.status}")
                         return [], 0

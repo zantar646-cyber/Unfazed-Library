@@ -8,6 +8,8 @@ from typing import Optional
 import aiohttp
 from loguru import logger
 
+from bot.utils.net import proxy_kwargs
+
 try:
     from playwright.async_api import async_playwright
     BROWSER_AVAILABLE = True
@@ -79,7 +81,9 @@ async def _download_with_cookies(url: str, cookies: list[dict]) -> Optional[byte
     headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
     connector = aiohttp.TCPConnector(force_close=True)
     async with aiohttp.ClientSession(connector=connector, cookies=cookie_dict) as session:
-        async with session.get(url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+        async with session.get(
+            url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=30), **proxy_kwargs(url)
+        ) as resp:
             if resp.status != 200:
                 return None
             content = await resp.read()
@@ -212,7 +216,14 @@ async def try_direct_download(url: str) -> DownloadResult:
         async with asyncio.timeout(10):
             connector = aiohttp.TCPConnector(ttl_dns_cache=300)
             async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.get(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"}, ssl=False, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as resp:
+                async with session.get(
+                    url,
+                    headers={"User-Agent": USER_AGENT, "Accept": "*/*"},
+                    ssl=False,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                    allow_redirects=True,
+                    **proxy_kwargs(url),
+                ) as resp:
                     status = resp.status
                     if status in (403, 429, 503):
                         logger.info(f"Direct download: HTTP {status} in {time.monotonic() - t0:.1f}s, falling back")

@@ -34,12 +34,28 @@ class SourceRouter:
         t0 = time.monotonic()
         first, total = await self._try_zl_search(query, 1, per_page, language)
         if not first:
-            # Fallback if ZL is empty: try Anna's Archive quickly
-            aa_results, aa_total = await self._try_annas_search(query, 1, per_page)
+            # ZL is empty/unavailable. Query Anna's Archive and the free catalogs
+            # concurrently so a slow AA response doesn't delay the fallback (and
+            # vice versa) within the serverless time budget.
+            (aa_results, aa_total), ol_results, lg_results = await asyncio.gather(
+                self._try_annas_search(query, 1, per_page),
+                self._try_openlibrary_search(query, per_page, language),
+                self._try_libgen_search(query, per_page, language),
+            )
             if aa_results:
                 for r in aa_results:
                     r._source = "Anna's Archive"
                 ranked = rank_results(deduplicate_results(aa_results), query)
+                return ranked, len(ranked)
+
+            fallback = ol_results + lg_results
+            if fallback:
+                ranked = rank_results(deduplicate_results(fallback), query)
+                elapsed = time.monotonic() - t0
+                logger.info(
+                    f"Search first-batch fallback '{query}': {len(ol_results)} OL + "
+                    f"{len(lg_results)} LG -> {len(ranked)} books in {elapsed:.3f}s"
+                )
                 return ranked, len(ranked)
             return [], 0
 
@@ -97,24 +113,10 @@ class SourceRouter:
             return more_zl
 
         async def _fetch_openlibrary():
-            try:
-                from bot.sources.openlibrary import OpenLibrarySource
-                async with asyncio.timeout(3.5):
-                    res, _ = await OpenLibrarySource().search(query, per_page=15, language=language)
-                    return res
-            except Exception as e:
-                logger.debug(f"Background OpenLibrary fetch failed: {e}")
-                return []
+            return await self._try_openlibrary_search(query, 15, language)
 
         async def _fetch_libgen():
-            try:
-                from bot.sources.libgen import LibGenSource
-                async with asyncio.timeout(3.5):
-                    res, _ = await LibGenSource().search(query, per_page=15, language=language)
-                    return res
-            except Exception as e:
-                logger.debug(f"Background LibGen fetch failed: {e}")
-                return []
+            return await self._try_libgen_search(query, 15, language)
 
         aa_results, zl_results, ol_results, lg_results = await asyncio.gather(
             _fetch_aa(), _fetch_zl_remaining(), _fetch_openlibrary(), _fetch_libgen(), return_exceptions=True
@@ -216,6 +218,34 @@ class SourceRouter:
             f"{len(all_results)} results collected in {elapsed:.2f}s"
         )
         return all_results, total
+
+    async def _try_openlibrary_search(
+        self, query: str, per_page: int = 15, language: Optional[str] = None
+    ) -> list:
+        """Fetch Open Library metadata results with a bounded timeout."""
+        try:
+            from bot.sources.openlibrary import OpenLibrarySource
+
+            async with asyncio.timeout(3.5):
+                res, _ = await OpenLibrarySource().search(query, per_page=per_page, language=language)
+                return res or []
+        except Exception as e:
+            logger.debug(f"OpenLibrary fetch failed: {e}")
+            return []
+
+    async def _try_libgen_search(
+        self, query: str, per_page: int = 15, language: Optional[str] = None
+    ) -> list:
+        """Fetch LibGen results with a bounded timeout."""
+        try:
+            from bot.sources.libgen import LibGenSource
+
+            async with asyncio.timeout(3.5):
+                res, _ = await LibGenSource().search(query, per_page=per_page, language=language)
+                return res or []
+        except Exception as e:
+            logger.debug(f"LibGen fetch failed: {e}")
+            return []
 
     async def _try_annas_search(self, query: str, page: int = 1, per_page: int = 10) -> Tuple[list, int]:
         try:

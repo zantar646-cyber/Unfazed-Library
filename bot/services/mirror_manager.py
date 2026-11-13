@@ -9,6 +9,7 @@ import aiohttp
 from loguru import logger
 
 from bot.config.settings import settings
+from bot.utils.net import proxy_kwargs
 
 
 @dataclass
@@ -219,6 +220,7 @@ class MirrorManager:
                 cookies=cookies,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=aiohttp.ClientTimeout(total=10),
+                **proxy_kwargs(url),
             ) as resp:
                 if resp.status != 200:
                     return False
@@ -236,6 +238,7 @@ class MirrorManager:
                 params={"message": "test", "page": "1", "limit": "1"},
                 cookies=cookies,
                 timeout=aiohttp.ClientTimeout(total=10),
+                **proxy_kwargs(url),
             ) as resp:
                 return resp.status == 200
         except Exception:
@@ -249,6 +252,7 @@ class MirrorManager:
                 cookies=cookies,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=aiohttp.ClientTimeout(total=10),
+                **proxy_kwargs(url),
             ) as resp:
                 if resp.status != 200:
                     return False
@@ -265,6 +269,7 @@ class MirrorManager:
                     cookies=cookies,
                     timeout=aiohttp.ClientTimeout(total=10),
                     allow_redirects=False,
+                    **proxy_kwargs(dl_url),
                 ) as dl_resp:
                     if dl_resp.status == 503:
                         body = await dl_resp.read()

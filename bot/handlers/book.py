@@ -38,6 +38,7 @@ from bot.utils.browser_downloader import (
 )
 from bot.utils.convert_storage import create_convert_key
 from bot.utils.i18n import get_text
+from bot.utils.net import proxy_kwargs
 
 router = Router()
 
@@ -711,7 +712,12 @@ async def fetch_description_openlibrary(title: str, author: Optional[str] = None
     params = {"q": query, "limit": 1}
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("https://openlibrary.org/search.json", params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with session.get(
+                "https://openlibrary.org/search.json",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10),
+                **proxy_kwargs("https://openlibrary.org/search.json"),
+            ) as resp:
                 if resp.status != 200:
                     logger.warning(f"Open Library API returned {resp.status}")
                     return None
@@ -723,7 +729,11 @@ async def fetch_description_openlibrary(title: str, author: Optional[str] = None
                 key = first.get("key")
                 if not key:
                     return None
-                async with session.get(f"https://openlibrary.org{key}.json", timeout=aiohttp.ClientTimeout(total=10)) as wr:
+                async with session.get(
+                    f"https://openlibrary.org{key}.json",
+                    timeout=aiohttp.ClientTimeout(total=10),
+                    **proxy_kwargs("https://openlibrary.org"),
+                ) as wr:
                     if wr.status != 200:
                         return None
                     work_data = await wr.json()
@@ -749,7 +759,12 @@ async def fetch_description_google_books(title: str, author: Optional[str] = Non
     }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("https://www.googleapis.com/books/v1/volumes", params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with session.get(
+                "https://www.googleapis.com/books/v1/volumes",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10),
+                **proxy_kwargs("https://www.googleapis.com"),
+            ) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()

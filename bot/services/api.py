@@ -26,6 +26,7 @@ from bot.config.settings import settings
 from bot.services.cache import cache
 from bot.services.mirror_manager import MirrorManager, NoHealthyMirrorError
 from bot.utils.browser_downloader import BROWSER_AVAILABLE, browser_login
+from bot.utils.net import proxy_kwargs
 
 
 CLOUDFLARE_BLOCKED_HOSTS = frozenset({
@@ -190,6 +191,7 @@ class APIService:
                             "gg_json_mode": "1",
                         },
                         timeout=aiohttp.ClientTimeout(total=15),
+                        **proxy_kwargs(rpc_url),
                     ) as resp:
                         if resp.status == 200:
                             text = await resp.text()
@@ -378,6 +380,7 @@ class APIService:
                 params=params,
                 json=json_data,
                 cookies=cookies,
+                **proxy_kwargs(url),
             ) as response:
                 if response.status == 429:
                     retry_after = int(response.headers.get("Retry-After", "5"))
@@ -608,7 +611,9 @@ class APIService:
         self, url: str, params: Dict, cookies: Optional[Dict]
     ) -> Tuple[List[BookResult], int]:
         await self.rate_limiter.acquire()
-        async with self.session.get(url, params=params, cookies=cookies) as resp:
+        async with self.session.get(
+            url, params=params, cookies=cookies, **proxy_kwargs(url)
+        ) as resp:
             logger.info(f"    GET {url} params={params} -> status={resp.status}")
             if resp.status == 429:
                 retry_after = int(resp.headers.get("Retry-After", "5"))
@@ -626,7 +631,9 @@ class APIService:
     ) -> Tuple[List[BookResult], int]:
         await self.rate_limiter.acquire()
 
-        async with self.session.post(url, json=payload, cookies=cookies) as resp:
+        async with self.session.post(
+            url, json=payload, cookies=cookies, **proxy_kwargs(url)
+        ) as resp:
             if resp.status != 200:
                 raw_text = await resp.text()
                 logger.warning(f"EAPI JSON POST {url} -> {resp.status}")
@@ -644,7 +651,9 @@ class APIService:
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-        async with self.session.post(url, data=form_data, cookies=cookies, headers=headers) as resp:
+        async with self.session.post(
+            url, data=form_data, cookies=cookies, headers=headers, **proxy_kwargs(url)
+        ) as resp:
             if resp.status != 200:
                 raw_text = await resp.text()
                 logger.warning(f"EAPI form POST {url} -> {resp.status}")
@@ -691,6 +700,7 @@ class APIService:
                 data={"message": book_id, "page": "1", "limit": "5"},
                 cookies=cookies,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+                **proxy_kwargs(f"{self.base_url}/eapi/book/search"),
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -760,6 +770,7 @@ class APIService:
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=120, sock_read=60),
                 allow_redirects=False,
+                **proxy_kwargs(current_url),
             ) as resp:
                 if resp.status in (301, 302, 303, 307, 308):
                     location = resp.headers.get("Location")
@@ -999,7 +1010,12 @@ class APIService:
 
         try:
             await self.rate_limiter.acquire()
-            async with self.session.get(f"{self.base_url}/search", params=search_params, cookies=cookies) as resp:
+            async with self.session.get(
+                f"{self.base_url}/search",
+                params=search_params,
+                cookies=cookies,
+                **proxy_kwargs(f"{self.base_url}/search"),
+            ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     books_data = data.get("books", [])
@@ -1027,7 +1043,13 @@ class APIService:
                 await self.rate_limiter.acquire()
                 form_headers = {"Content-Type": "application/x-www-form-urlencoded"}
                 form_data = {k: str(v) if not isinstance(v, str) else v for k, v in form_payload.items()}
-                async with self.session.post(f"{self.base_url}/eapi/book/search", data=form_data, cookies=cookies, headers=form_headers) as resp:
+                async with self.session.post(
+                    f"{self.base_url}/eapi/book/search",
+                    data=form_data,
+                    cookies=cookies,
+                    headers=form_headers,
+                    **proxy_kwargs(f"{self.base_url}/eapi/book/search"),
+                ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         books_data = data.get("books", [])
@@ -1041,7 +1063,12 @@ class APIService:
 
         try:
             await self.rate_limiter.acquire()
-            async with self.session.post(f"{self.base_url}/eapi/book/search", json={"message": "", "page": page, "limit": per_page, "categories[]": category_slug}, cookies=cookies) as resp:
+            async with self.session.post(
+                f"{self.base_url}/eapi/book/search",
+                json={"message": "", "page": page, "limit": per_page, "categories[]": category_slug},
+                cookies=cookies,
+                **proxy_kwargs(f"{self.base_url}/eapi/book/search"),
+            ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     books_data = data.get("books", [])

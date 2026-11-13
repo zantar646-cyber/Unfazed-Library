@@ -21,6 +21,7 @@ from tenacity import (
 )
 
 from bot.config.settings import settings
+from bot.utils.net import get_proxy_for
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -108,6 +109,9 @@ class AnnasArchive:
                 },
                 timeout=httpx.Timeout(settings.annas_archive_timeout, connect=15, read=30),
                 follow_redirects=True,
+                # httpx honours proxy env vars itself, but passing the resolved
+                # value explicitly also covers ALL_PROXY consistently.
+                proxy=get_proxy_for(self.base_url),
             )
         return self._client
 

@@ -9,6 +9,7 @@ import aiohttp
 from loguru import logger
 
 from bot.services.api import BookResult
+from bot.utils.net import proxy_kwargs
 
 
 class LibGenSource:
@@ -55,7 +56,7 @@ class LibGenSource:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             }
-            async with session.get(url, headers=headers) as resp:
+            async with session.get(url, headers=headers, **proxy_kwargs(url)) as resp:
                 if resp.status != 200:
                     return [], 0
                 html = await resp.text()
