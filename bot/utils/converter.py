@@ -8,7 +8,14 @@ from typing import Optional
 
 from loguru import logger
 
-CONVERTER_CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "converter_cache"
+from bot.config.settings import settings
+
+# Serverless platforms (Vercel) only allow writes under /tmp.
+CONVERTER_CACHE_DIR = (
+    Path("/tmp") / "converter_cache"
+    if settings.is_vercel
+    else Path(__file__).resolve().parent.parent.parent / "converter_cache"
+)
 CONVERTER_FILE_TTL = 3600  # 1 hour
 
 

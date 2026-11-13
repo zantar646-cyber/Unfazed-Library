@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 
+from bot.config.settings import settings
 from bot.database.models import User as DBUser
 from bot.database.service import db
 from bot.services.api import api
@@ -19,8 +20,13 @@ from bot.utils.helpers import is_real_file, safe_edit_or_send, sanitize_html
 
 router = Router()
 
-READER_CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "reader_cache"
-READER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Serverless platforms (Vercel) mount the deployment read-only; only /tmp is
+# writable. Never create this at import time - it would crash the whole function.
+READER_CACHE_DIR = (
+    Path("/tmp") / "reader_cache"
+    if settings.is_vercel
+    else Path(__file__).resolve().parent.parent.parent / "reader_cache"
+)
 
 # In-memory cache for loaded chapters: book_id -> list of (title, [pages])
 _READER_CACHE: Dict[str, List[Tuple[str, List[str]]]] = {}
@@ -188,7 +194,11 @@ async def callback_read(callback: CallbackQuery, db_user: Optional[DBUser] = Non
                         pages = paginate_text(full_text)
                         cached_data.append((title, pages))
                     _READER_CACHE[book_id] = cached_data
-                    disk_file.write_bytes(file_bytes)
+                    try:
+                        READER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                        disk_file.write_bytes(file_bytes)
+                    except OSError as exc:
+                        logger.debug(f"Skipping reader disk cache for {book_id}: {exc}")
                     logger.info(f"Successfully extracted {len(cached_data)} chapters for {book.title}")
             except Exception as exc:
                 logger.error(f"Error parsing EPUB for reader: {exc}")
