@@ -88,7 +88,7 @@ async def handle_get_request(path: str, query_params: Dict[str, list[str]], host
         parsed_path = parsed_path[4:]  # Normalize /api/x -> /x
 
     # 1. Health & status
-    if parsed_path in ("", "/health"):
+    if parsed_path in ("", "/health", "/index", "/index.py"):
         bot_info = {}
         try:
             me = await bot.get_me()
