@@ -462,7 +462,7 @@ def _get_file_extension(book: Any) -> str:
     return ".epub"
 
 
-async def _send_book_file(callback: CallbackQuery, book: Any, file_bytes: bytes, source: Optional[str] = None) -> None:
+async def _send_book_file(message: Message, book: Any, file_bytes: bytes, source: Optional[str] = None) -> None:
     ext = _get_file_extension(book)
     filename = f"{sanitize_html(book.title)}{ext}"
     filename = filename.replace(" ", "_")
@@ -484,7 +484,7 @@ async def _send_book_file(callback: CallbackQuery, book: Any, file_bytes: bytes,
         f"\U0001f4be <b>Size:</b> {format_file_size(book.file_size)}"
     )
 
-    sent = await callback.message.answer_document(
+    sent = await message.answer_document(
         document=BufferedInputFile(file=file_bytes, filename=filename),
         caption=caption,
         parse_mode="HTML",
@@ -529,7 +529,7 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
             fmt=fmt,
         )
         if data:
-            await _send_book_file(callback, book, data, source=download_source)
+            await _send_book_file(callback.message, book, data, source=download_source)
             await _record_successful_download(book_id, db_user, download_source or "direct", book)
             logger.info(f"Download successful via {download_source}: {book.title}")
             return
@@ -556,7 +556,7 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
         )
         if data:
             resolve_task.cancel()
-            await _send_book_file(callback, book, data, source=download_source)
+            await _send_book_file(callback.message, book, data, source=download_source)
             await _record_successful_download(book_id, db_user, download_source or "direct", book)
             logger.info(f"Download successful via {download_source}: {book.title}")
             return
@@ -575,7 +575,7 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
         if file_token and not data:
             data = await api.download_file(download_url, fmt=fmt, alt_url=alt_url, file_token=file_token)
             if data:
-                await _send_book_file(callback, book, data, source="Z-Library")
+                await _send_book_file(callback.message, book, data, source="Z-Library")
                 await _record_successful_download(book_id, db_user, "direct", book)
                 logger.info(f"Direct download successful (with token): {book.title}")
                 return
@@ -598,7 +598,7 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
     if not _cf_protected:
         data = await api.download_file(download_url, fmt=fmt, alt_url=alt_url, file_token=file_token)
         if data:
-            await _send_book_file(callback, book, data, source="Z-Library")
+            await _send_book_file(callback.message, book, data, source="Z-Library")
             await _record_successful_download(book_id, db_user, "direct", book)
             logger.info(f"Direct download successful (resolved): {book.title}")
             return
@@ -617,7 +617,7 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
     await status_msg.delete()
 
     if result.success and is_real_file(result.data, fmt):
-        await _send_book_file(callback, book, result.data, source="Z-Library (browser)")
+        await _send_book_file(callback.message, book, result.data, source="Z-Library (browser)")
         await _record_successful_download(book_id, db_user, "browser", book)
         logger.info(f"Browser download successful: {book.title}")
     elif result.success:
@@ -671,8 +671,9 @@ async def process_download_from_id(message: Message, book_id: str, db_user: DBUs
         return
 
     logger.info(f"process_download_from_id: id={book.id} ext_id={book.external_id} title='{book.title}' stored_dl={book.download_url}")
+    fmt = book.file_extension or "epub"
 
-    download_url, _, _, _ = await _resolve_book_url(book)
+    download_url, alt_url, file_token, _ = await _resolve_book_url(book)
 
     if not download_url:
         await message.answer(get_text("download_unavailable", lang))
@@ -683,6 +684,22 @@ async def process_download_from_id(message: Message, book_id: str, db_user: DBUs
             successful=False,
             error="No download URL returned",
         )
+        return
+
+    # Deliver the actual file when possible; fall back to a link only if every
+    # download path fails.
+    data, download_source = await source_router.download_book(
+        book.external_id or book.id,
+        download_url,
+        fmt=fmt,
+        file_token=file_token,
+    )
+    if not data:
+        data = await api.download_file(download_url, fmt=fmt, alt_url=alt_url, file_token=file_token)
+    if data:
+        await _send_book_file(message, book, data, source=download_source)
+        await _record_successful_download(book.id, db_user, download_source or "direct", book)
+        logger.info(f"Direct download successful for /download: {book.title}")
         return
 
     await db.record_download(
@@ -702,9 +719,6 @@ async def process_download_from_id(message: Message, book_id: str, db_user: DBUs
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
-
-
-
 
 
 async def fetch_description_openlibrary(title: str, author: Optional[str] = None) -> Optional[str]:

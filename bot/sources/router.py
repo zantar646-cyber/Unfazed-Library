@@ -286,6 +286,14 @@ class SourceRouter:
         fmt: str = "epub",
         file_token: Optional[str] = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
+        # LibGen results point at a resolver page, not a Z-Library file.
+        from bot.sources.libgen import is_libgen_url
+
+        if is_libgen_url(download_url):
+            data = await self._try_libgen_download(download_url, fmt)
+            if data:
+                return data, "LibGen"
+
         # Z-Library first (fast HTTP with cookies, preferred over slow AA)
         data = await self._try_zl_download(book_id, download_url, fmt, file_token)
         if data:
@@ -316,6 +324,15 @@ class SourceRouter:
             return None
         except Exception as e:
             logger.warning(f"AA download threw exception: {e}")
+            return None
+
+    async def _try_libgen_download(self, download_url: str, fmt: str = "epub") -> Optional[bytes]:
+        try:
+            from bot.sources.libgen import LibGenSource
+
+            return await LibGenSource().download(download_url, fmt=fmt)
+        except Exception as e:
+            logger.warning(f"LibGen download threw exception: {e}")
             return None
 
     async def _try_zl_download(
