@@ -101,6 +101,7 @@ async def handle_get_request(path: str, query_params: Dict[str, list[str]], host
         return 200, {
             "status": "online",
             "platform": "Vercel Serverless",
+            "commit": (os.getenv("VERCEL_GIT_COMMIT_SHA") or "local")[:7],
             "bot": bot_info,
             "database": db_name,
             "active_engine": "bot (full architecture)",
