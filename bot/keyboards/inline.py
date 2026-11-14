@@ -182,12 +182,21 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def download_complete_keyboard(book_id: str, convert_key: Optional[str] = None) -> InlineKeyboardMarkup:
+def download_complete_keyboard(
+    book_id: str,
+    convert_key: Optional[str] = None,
+    convert_url: Optional[str] = None,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="\U0001f4c2 Details", callback_data=f"book:detail:{book_id}"),
     )
-    if convert_key:
+    if convert_url:
+        # Cross-bot hand-off: a t.me deep link, never a bot-to-bot forward.
+        builder.row(
+            InlineKeyboardButton(text="\U0001f504 Convert", url=convert_url),
+        )
+    elif convert_key:
         builder.row(
             InlineKeyboardButton(text="\U0001f504 Convert", callback_data=f"convert:{book_id}:{convert_key}"),
         )

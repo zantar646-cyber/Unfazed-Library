@@ -39,9 +39,10 @@ from bot.sources import router as source_router
 from bot.utils.browser_downloader import (
     try_browser_download,
 )
-from bot.utils.convert_storage import create_convert_key
+from bot.utils.deeplink import build_convert_deeplink
 from bot.utils.i18n import get_text
 from bot.utils.net import proxy_kwargs
+from bot.utils.storage import storage_chat_id, store_file_for_conversion
 
 router = Router()
 
@@ -576,18 +577,56 @@ async def _send_book_file(
         f"\U0001f4be <b>Size:</b> {format_file_size(book.file_size)}"
     )
 
-    sent = await message.answer_document(
+    # Store once in the shared private channel, then copy that message to the
+    # user. The channel message id is the stable cross-bot reference; the
+    # Library bot's file_id is never handed to the Converter bot.
+    storage_message_id = await store_file_for_conversion(
+        message.bot,
+        file_bytes,
+        filename,
+        caption=(
+            f"\U0001f4e6 <b>{sanitize_html(book.title)}</b>\n"
+            f"<i>by {sanitize_html(book.author or 'Unknown')}</i>  |  "
+            f"<code>{book.id}</code>"
+        ),
+    )
+
+    convert_url = None
+    if storage_message_id:
+        try:
+            convert_url = build_convert_deeplink(storage_message_id)
+        except Exception as exc:
+            logger.warning(f"Could not build converter deep link: {exc}")
+
+    reply_markup = download_complete_keyboard(book.id, convert_url=convert_url)
+    chat_id = storage_chat_id()
+
+    if storage_message_id and chat_id is not None:
+        # copy_message returns MessageId, not Message; the document is
+        # delivered by Telegram in a single server-side hop.
+        try:
+            await message.bot.copy_message(
+                chat_id=message.chat.id,
+                from_chat_id=chat_id,
+                message_id=storage_message_id,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+            logger.debug(f"Sent book {book.id} via storage copy, convert_url={bool(convert_url)}")
+            return
+        except Exception as exc:
+            # Storage copy can fail if the channel id is wrong or the bot lost
+            # access; still deliver the book directly so the download succeeds.
+            logger.warning(f"Storage copy failed for book {book.id}: {exc}")
+
+    await message.answer_document(
         document=BufferedInputFile(file=file_bytes, filename=filename),
         caption=caption,
         parse_mode="HTML",
+        reply_markup=reply_markup,
     )
-
-    if sent.document:
-        file_id = sent.document.file_id
-        convert_key = create_convert_key(file_id, file_ext)
-        await sent.edit_reply_markup(
-            reply_markup=download_complete_keyboard(book.id, convert_key)
-        )
+    logger.debug(f"Sent book {book.id} directly, convert_url={bool(convert_url)}")
 
 
 async def _record_successful_download(book_id: str, db_user: DBUser, method: str, book: Any) -> None:
@@ -1085,7 +1124,35 @@ async def callback_ignore(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("convert:"))
 async def callback_convert(callback: CallbackQuery, db_user: Optional[DBUser] = None) -> None:
     lang = db_user.preferred_language if db_user else None
+    parts = callback.data.split(":", 2)
+    storage_ref = parts[2] if len(parts) > 2 else ""
+
+    convert_url = None
+    if storage_ref.isdigit():
+        # New flow: callback data carries the shared-channel message id, so the
+        # link still works on a different (cold) serverless instance.
+        try:
+            convert_url = build_convert_deeplink(int(storage_ref))
+        except Exception as exc:
+            logger.warning(f"Could not build converter deep link from callback: {exc}")
+
     await callback.answer()
+
+    if convert_url:
+        await callback.message.answer(
+            f"{get_text('convert_title', lang)}\n\n"
+            f"{get_text('convert_deeplink_message', lang)}",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=get_text("convert_button", lang),
+                    url=convert_url,
+                )]
+            ]),
+        )
+        return
+
+    # Legacy fallback for old messages that stored an in-memory convert key.
     text = (
         f"{get_text('convert_title', lang)}\n\n"
         f"{get_text('convert_message', lang)}"

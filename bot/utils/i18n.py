@@ -182,10 +182,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Convert
         "convert_title": "\U0001f504 <b><u>Convert this file</u></b>",
         "convert_message": (
-            "<i>To convert this file to another format, forward it to</i> "
+            "<i>Choose the format you want in</i> "
             "<b>@Unfazed_File_Convertor_bot</b>.\n\n"
             "\U0001f4cb <b>Supported formats:</b> "
             "<i>PDF, EPUB, DOCX, images, audio, video, and more.</i>"
+        ),
+        "convert_deeplink_message": (
+            "\U0001f4c2 <i>Your file is already waiting in the converter.</i>\n"
+            "<i>Tap below to open it and pick a target format.</i>"
         ),
         "convert_button": "\U0001f504 Open @Unfazed_File_Convertor_bot",
         # Misc
@@ -365,10 +369,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "book_detail_downloads": "\U0001f4e5 <b>Скачиваний:</b> <code>{count}</code>",
         "convert_title": "\U0001f504 <b><u>Конвертировать файл</u></b>",
         "convert_message": (
-            "<i>Чтобы конвертировать этот файл в другой формат, "
-            "перешлите его</i> <b>@Unfazed_File_Convertor_bot</b>.\n\n"
+            "<i>Выберите нужный формат в</i> "
+            "<b>@Unfazed_File_Convertor_bot</b>.\n\n"
             "\U0001f4cb <b>Поддерживаемые форматы:</b> "
             "<i>PDF, EPUB, DOCX, изображения, аудио, видео и другие.</i>"
+        ),
+        "convert_deeplink_message": (
+            "\U0001f4c2 <i>Ваш файл уже загружен в конвертер.</i>\n"
+            "<i>Нажмите кнопку ниже и выберите целевой формат.</i>"
         ),
         "convert_button": "\U0001f504 Открыть @Unfazed_File_Convertor_bot",
         "start_first": "\u26a0\ufe0f <i>Сначала запустите бота командой</i> <code>/start</code>.",

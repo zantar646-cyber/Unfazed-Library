@@ -95,6 +95,13 @@ class Settings:
     database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", os.getenv("POSTGRES_URL", "")).strip())
     is_vercel: bool = field(default_factory=lambda: bool(os.getenv("VERCEL")))
 
+    # Library <-> File Converter bridge
+    storage_channel_id: str = field(default_factory=lambda: os.getenv("STORAGE_CHANNEL_ID", "").strip())
+    converter_bot_username: str = field(
+        default_factory=lambda: os.getenv("CONVERTER_BOT_USERNAME", "Unfazed_File_Convertor_bot").strip().lstrip("@")
+    )
+    deeplink_secret: str = field(default_factory=lambda: os.getenv("DEEPLINK_SECRET", "").strip())
+
     @property
     def db_dsn(self) -> str:
         if self.database_url:
