@@ -310,6 +310,12 @@ async def cmd_categories(message: Message, db_user: Optional[DBUser] = None) -> 
     lang = db_user.preferred_language if db_user else None
     categories = await db.get_all_categories()
 
+    # The serverless SQLite database lives in /tmp and starts empty on a cold
+    # instance. Re-seed so the Categories button always opens a real list.
+    if not categories:
+        await db.seed_categories()
+        categories = await db.get_all_categories()
+
     if not categories:
         await message.answer(get_text("categories_no_results", lang))
         return
@@ -317,7 +323,7 @@ async def cmd_categories(message: Message, db_user: Optional[DBUser] = None) -> 
     from bot.keyboards.inline import category_list_keyboard
 
     items_per_page = 5
-    total_pages = calculate_pages(len(categories), items_per_page)
+    total_pages = max(1, calculate_pages(len(categories), items_per_page))
     page_categories = categories[:items_per_page]
 
     await message.answer(

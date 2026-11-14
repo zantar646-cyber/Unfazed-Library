@@ -5,10 +5,8 @@ from typing import List, Optional, Tuple
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.config.settings import settings
 from bot.database.models import Book, Category
 from bot.utils.helpers import LANGUAGES, language_flag
-from bot.utils.i18n import get_text
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -128,10 +126,6 @@ def book_detail_keyboard(
         InlineKeyboardButton(text="🔖 Shelf", callback_data=f"shelf:choose:{book_id}"),
         InlineKeyboardButton(text="📖 Read", callback_data=f"read:{book_id}:0:0"),
     )
-    if settings.openai_api_key:
-        builder.row(
-            InlineKeyboardButton(text="✨ AI Insights", callback_data=f"ai:menu:{book_id}"),
-        )
     builder.row(InlineKeyboardButton(text="\u2b05\ufe0f Back", callback_data=back_callback))
     return builder.as_markup()
 
@@ -197,18 +191,6 @@ def download_complete_keyboard(book_id: str, convert_key: Optional[str] = None) 
         builder.row(
             InlineKeyboardButton(text="\U0001f504 Convert", callback_data=f"convert:{book_id}:{convert_key}"),
         )
-    return builder.as_markup()
-
-
-def ai_action_keyboard(book_id: str, lang: Optional[str] = None) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=get_text("ai_summary", lang), callback_data=f"ai:summary:{book_id}")
-    builder.button(text=get_text("ai_lessons", lang), callback_data=f"ai:lessons:{book_id}")
-    builder.button(text=get_text("ai_notes", lang), callback_data=f"ai:notes:{book_id}")
-    builder.button(text=get_text("ai_similar", lang), callback_data=f"ai:similar:{book_id}")
-    builder.button(text=get_text("ai_question", lang), callback_data=f"ai:question:{book_id}")
-    builder.adjust(2)
-    builder.row(InlineKeyboardButton(text="\u2b05\ufe0f Back", callback_data=f"book:detail:{book_id}"))
     return builder.as_markup()
 
 

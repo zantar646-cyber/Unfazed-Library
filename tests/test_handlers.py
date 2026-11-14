@@ -207,8 +207,8 @@ def test_dispatcher_includes_all_routers():
     from main import create_dispatcher
 
     dp = create_dispatcher()
-    # Verify all sub_routers are registered (user, book, shelf, alerts, reader, bookclub, inline, ai_features, admin)
-    assert len(dp.sub_routers) == 9
+    # Verify all sub_routers are registered (user, book, shelf, alerts, reader, bookclub, inline, admin)
+    assert len(dp.sub_routers) == 8
 
 
 @pytest.mark.asyncio

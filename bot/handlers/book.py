@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+import html
+import re
+from typing import Any, Optional
 
 import aiohttp
 from aiogram import F, Router, types
@@ -18,6 +20,7 @@ from bot.keyboards.inline import (
     category_list_keyboard,
     confirm_download_keyboard,
     download_complete_keyboard,
+    main_menu_keyboard,
 )
 from bot.utils.helpers import (
     build_book_message,
@@ -53,12 +56,29 @@ async def callback_categories_list(callback: CallbackQuery, db_user: Optional[DB
     page = int(callback.data.split(":")[-1])
     categories = await db.get_all_categories()
 
+    # Serverless SQLite in /tmp can be empty on a cold instance. Self-heal
+    # instead of showing an empty page (which looked like a dead button).
+    if not categories:
+        await db.seed_categories()
+        categories = await db.get_all_categories()
+
+    if not categories:
+        await safe_edit_or_send(
+            callback.message,
+            get_text("categories_no_results", lang),
+            reply_markup=main_menu_keyboard(),
+        )
+        await callback.answer()
+        return
+
     items_per_page = 5
-    total_pages = calculate_pages(len(categories), items_per_page)
+    total_pages = max(1, calculate_pages(len(categories), items_per_page))
+    page = max(1, min(page, total_pages))
     start = (page - 1) * items_per_page
     page_categories = categories[start: start + items_per_page]
 
-    await callback.message.edit_text(
+    await safe_edit_or_send(
+        callback.message,
         get_text("categories_title", lang),
         reply_markup=category_list_keyboard(page_categories, page, total_pages),
     )
@@ -390,20 +410,38 @@ async def callback_download(callback: CallbackQuery, db_user: Optional[DBUser] =
         return
 
     lang = db_user.preferred_language if db_user else None
-    await callback.answer()
 
     parts = callback.data.split(":")
     action = parts[1]
+    book_id = parts[2] if action == "confirm" and len(parts) > 2 else parts[-1]
 
-    if action == "confirm":
-        book_id = parts[2]
-        await process_download(callback, book_id, db_user)
+    answered = False
+    try:
+        book = await db.get_book(book_id)
+    except Exception as exc:
+        logger.exception(f"Could not load book {book_id}: {exc}")
+        book = None
+
+    if not book and callback.message is not None:
+        # Recovery runs a fresh search, which can take seconds. Answer now so
+        # the client stops spinning; a second answer() would be ignored, so any
+        # later failure is reported with a normal message instead.
+        await callback.answer()
+        answered = True
+        book = await _recover_book_from_message(callback.message)
+
+    if not book:
+        if answered:
+            await callback.message.answer(get_text("book_not_found", lang))
+        else:
+            await callback.answer(get_text("book_not_found", lang), show_alert=True)
         return
 
-    book_id = parts[1]
-    book = await db.get_book(book_id)
-    if not book:
-        await callback.answer("Book not found.", show_alert=True)
+    if not answered:
+        await callback.answer()
+
+    if action == "confirm":
+        await process_download(callback, book.id, db_user)
         return
 
     file_size = book.file_size or 0
@@ -411,10 +449,10 @@ async def callback_download(callback: CallbackQuery, db_user: Optional[DBUser] =
         await callback.message.answer(
             get_text("download_too_large", lang).format(size=format_file_size(file_size)),
             parse_mode="HTML",
-            reply_markup=confirm_download_keyboard(book_id),
+            reply_markup=confirm_download_keyboard(book.id),
         )
     else:
-        await process_download(callback, book_id, db_user)
+        await process_download(callback, book.id, db_user)
 
 
 async def _resolve_book_url(book: Book, skip_stored: bool = False) -> tuple[Optional[str], Optional[str], Optional[str], Optional[Book]]:
@@ -448,6 +486,54 @@ async def _resolve_book_url(book: Book, skip_stored: bool = False) -> tuple[Opti
             return (r.download_url, r.read_online_url, r.file_token, None)
 
     return (None, None, None, None)
+
+
+_BOOK_HEADER_RE = re.compile(r"<b>(.+?)</b>\s*\n<i>by (.+?)</i>", re.DOTALL)
+
+
+async def _recover_book_from_message(message: Message) -> Optional[Any]:
+    """Rebuild a book row from a detail card when the serverless DB was reset.
+
+    Vercel's SQLite file lives in ``/tmp`` and is per-instance. A search may
+    store books on one lambda while the Download click lands on another, so the
+    local ``books`` row can be missing even though the user is looking at a
+    perfectly valid card. The card itself contains the title and author, so we
+    can re-run the search in the current instance and recover the book.
+    """
+    text = (getattr(message, "caption", None) or getattr(message, "text", None) or "")
+    match = _BOOK_HEADER_RE.search(text)
+    if not match:
+        return None
+
+    title = html.unescape(match.group(1)).strip()
+    author = html.unescape(match.group(2)).strip()
+    if not title:
+        return None
+
+    logger.info(f"Book row missing in DB; recovering '{title}' (author='{author}') from card")
+    try:
+        results, _ = await asyncio.wait_for(
+            source_router.search_first_batch(title, per_page=10), timeout=20
+        )
+    except Exception as exc:
+        logger.warning(f"Book recovery search failed for '{title}': {exc}")
+        return None
+
+    if not results:
+        logger.warning(f"Book recovery found no results for '{title}'")
+        return None
+
+    try:
+        stored = await _store_search_results(results)
+    except Exception as exc:
+        logger.warning(f"Book recovery could not store '{title}': {exc}")
+        return None
+
+    normalized = title.casefold()
+    for book in stored:
+        if (book.title or "").strip().casefold() == normalized:
+            return book
+    return stored[0] if stored else None
 
 
 def _get_file_extension(book: Any) -> str:
@@ -603,6 +689,32 @@ async def _fallback_file(
 
 
 async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUser) -> None:
+    """Run a download with visible progress and a guaranteed error response."""
+    lang = db_user.preferred_language if db_user else None
+    status_msg = None
+    try:
+        status_msg = await callback.message.answer(get_text("download_loading", lang))
+    except Exception as exc:
+        logger.debug(f"Could not send download status message: {exc}")
+
+    try:
+        await _process_download(callback, book_id, db_user)
+    except Exception as exc:
+        # Never let a source/Telegram failure end in silence.
+        logger.exception(f"Download failed for book {book_id}: {exc}")
+        try:
+            await callback.message.answer(get_text("download_failed", lang))
+        except Exception:
+            pass
+    finally:
+        if status_msg is not None:
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+
+
+async def _process_download(callback: CallbackQuery, book_id: str, db_user: DBUser) -> None:
     book = await db.get_book(book_id)
     if not book:
         lang = db_user.preferred_language if db_user else None
@@ -729,12 +841,10 @@ async def process_download(callback: CallbackQuery, book_id: str, db_user: DBUse
             logger.info(f"Fallback download successful for {book.title}")
             return
 
-    status_msg = await callback.message.answer(get_text("download_loading", lang))
     browser_cookies = {}
     if api._remix_userkey and api._remix_userid:
         browser_cookies = {"remix_userkey": api._remix_userkey, "remix_userid": api._remix_userid}
     result = await try_browser_download(download_url, book_id, alt_url=alt_url, file_token=file_token, remix_cookies=browser_cookies)
-    await status_msg.delete()
 
     if result.success and is_real_file(result.data, fmt):
         await _send_book_file(callback.message, book, result.data, source="Z-Library (browser)")

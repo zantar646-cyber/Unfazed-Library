@@ -63,7 +63,6 @@ class Settings:
         int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()
     ])
 
-    openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     google_books_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_BOOKS_API_KEY", ""))
 
     rate_limit_per_user: int = field(default_factory=lambda: int(os.getenv("RATE_LIMIT_PER_USER", "10")))

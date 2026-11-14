@@ -13,11 +13,10 @@ from loguru import logger
 
 from bot.config.settings import settings
 from bot.database.service import db
-from bot.handlers import admin, ai_features, alerts, book, bookclub, inline_query, reader, shelf, user
+from bot.handlers import admin, alerts, book, bookclub, inline_query, reader, shelf, user
 from bot.middlewares.auth import RegistrationMiddleware
 from bot.middlewares.logging import LoggingMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
-from bot.services.ai import ai
 from bot.services.api import api
 from bot.services.cache import cache
 from bot.sources.annas_archive import annas_archive
@@ -126,12 +125,6 @@ async def on_startup(bot: Bot) -> None:
     await db.create_tables()
     await db.seed_categories()
 
-    if settings.openai_api_key:
-        await ai.initialize()
-        logger.info(f"AI features initialized (available={ai.available})")
-    else:
-        logger.info("AI features disabled - no OPENAI_API_KEY configured")
-
     from bot.utils.browser_downloader import init_browser
     await init_browser()
 
@@ -186,7 +179,6 @@ def create_dispatcher() -> Dispatcher:
         reader.router,
         bookclub.router,
         inline_query.router,
-        ai_features.router,
         admin.router,
     ]
     for r in routers:

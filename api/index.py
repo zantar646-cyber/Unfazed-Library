@@ -44,6 +44,9 @@ async def get_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await cache.initialize()
         await api.initialize()
         await db.create_tables()
+        # SQLite in /tmp starts empty on every cold serverless instance.
+        # Seed the default categories so the Categories menu is never empty.
+        await db.seed_categories()
 
         _bot = Bot(
             token=settings.bot_token,

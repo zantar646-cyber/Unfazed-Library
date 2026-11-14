@@ -62,8 +62,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "help_tips_header": "\U0001f4a1 <u><b>Tips</b></u>",
         "help_tips_items": (
             "\u2022 Use the <b>reply keyboard</b> shortcuts below\n"
-            "\u2022 Book details include <i>description, format, size</i>\n"
-            "\u2022 AI features: <i>summary, lessons, similar books</i>"
+            "\u2022 Book details include <i>description, format, size</i>"
         ),
         "help_footer": "\u2753 <i>Need more help?</i> Contact the administrator.",
         # Menu
@@ -164,6 +163,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_cancel": "\u274c Cancel",
         "download_link": "\U0001f4e5 <b>Download</b> <u>{title}</u> <i>by</i> {author}:\n<code>{url}</code>",
         "download_loading": "\u23f3 <i>Fetching your book...</i>",
+        "download_failed": "\u274c <i>Download failed. Please try again in a moment.</i>",
         # Book detail
         "book_not_found": "\u274c <i>Book not found.</i>",
         "book_detail_header": "<b>{title}</b>\n<i>by {author}</i>\n\n{description}",
@@ -179,22 +179,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "book_detail_downloads": "\U0001f4e5 <b>Downloads:</b> <code>{count}</code>",
         # Description
         "desc_no_description": "\U0001f4ed <i>No description available.</i>",
-        # AI features
-        "ai_summary": "\U0001f4dd <b><u>AI Summary</u></b>",
-        "ai_lessons": "\U0001f4a1 <b><u>Key Lessons</u></b>",
-        "ai_notes": "\U0001f4da <b><u>Study Notes</u></b>",
-        "ai_similar": "\U0001f4d6 <b><u>Similar Books</u></b>",
-        "ai_question": "\u2753 <b><u>Ask a Question</u></b>",
-        "ai_generating": "{header}\n\n<i>For</i> <b>{title}</b>\n\n\u23f3 <i>Generating... Please wait.</i>",
-        "ai_question_prompt": (
-            "<b>{title}</b>\n\n"
-            "<i>Please type your question about this book in the chat.</i>"
-        ),
-        "ai_question_instruction": (
-            "<i>Send your question about</i> <b>{title}</b> "
-            "<i>as a reply to this message.</i>"
-        ),
-        "ai_error": "\u274c <i>Sorry, an error occurred while processing your request.</i> Please try again.",
         # Convert
         "convert_title": "\U0001f504 <b><u>Convert this file</u></b>",
         "convert_message": (
@@ -274,8 +258,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "help_tips_header": "\U0001f4a1 <u><b>Советы</b></u>",
         "help_tips_items": (
             "\u2022 Используйте <b>клавиатуру быстрого доступа</b>\n"
-            "\u2022 В деталях книги: <i>описание, формат, размер</i>\n"
-            "\u2022 AI функции: <i>краткое содержание, уроки, похожие книги</i>"
+            "\u2022 В деталях книги: <i>описание, формат, размер</i>"
         ),
         "help_footer": "\u2753 <i>Нужна помощь?</i> Свяжитесь с администратором.",
         "menu_text": (
@@ -366,6 +349,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_cancel": "\u274c Отмена",
         "download_link": "\U0001f4e5 <b>Скачать</b> <u>{title}</u> <i>от</i> {author}:\n<code>{url}</code>",
         "download_loading": "\u23f3 <i>Загружаю книгу...</i>",
+        "download_failed": "\u274c <i>Не удалось скачать. Попробуйте ещё раз через минуту.</i>",
         "book_not_found": "\u274c <i>Книга не найдена.</i>",
         "desc_no_description": "\U0001f4ed <i>Описание недоступно.</i>",
         "book_detail_header": "<b>{title}</b>\n<i>by {author}</i>\n\n{description}",
@@ -379,21 +363,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "book_detail_size": "\U0001f4be <b>Размер:</b> {value}",
         "book_detail_category": "\U0001f4c2 <b>Категория:</b> {value}",
         "book_detail_downloads": "\U0001f4e5 <b>Скачиваний:</b> <code>{count}</code>",
-        "ai_summary": "\U0001f4dd <b><u>Краткое содержание (AI)</u></b>",
-        "ai_lessons": "\U0001f4a1 <b><u>Ключевые уроки</u></b>",
-        "ai_notes": "\U0001f4da <b><u>Учебные заметки</u></b>",
-        "ai_similar": "\U0001f4d6 <b><u>Похожие книги</u></b>",
-        "ai_question": "\u2753 <b><u>Задать вопрос</u></b>",
-        "ai_generating": "{header}\n\n<i>Для</i> <b>{title}</b>\n\n\u23f3 <i>Генерируется... Пожалуйста, подождите.</i>",
-        "ai_question_prompt": (
-            "<b>{title}</b>\n\n"
-            "<i>Напишите ваш вопрос об этой книге в чат.</i>"
-        ),
-        "ai_question_instruction": (
-            "<i>Отправьте ваш вопрос о</i> <b>{title}</b> "
-            "<i>ответом на это сообщение.</i>"
-        ),
-        "ai_error": "\u274c <i>Произошла ошибка.</i> Пожалуйста, попробуйте снова.",
         "convert_title": "\U0001f504 <b><u>Конвертировать файл</u></b>",
         "convert_message": (
             "<i>Чтобы конвертировать этот файл в другой формат, "
