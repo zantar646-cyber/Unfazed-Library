@@ -143,16 +143,21 @@ async def handle_get_request(path: str, query_params: Dict[str, list[str]], host
     if parsed_path in ("/webhook_info", "/api/webhook_info"):
         try:
             info = await bot.get_webhook_info()
+            # aiogram exposes dates as ``datetime`` objects, which json.dumps
+            # cannot serialize; dump them to JSON-native values first.
+            data = info.model_dump(mode="json")
             return 200, {
-                "url": info.url,
-                "has_custom_certificate": info.has_custom_certificate,
-                "pending_update_count": info.pending_update_count,
-                "last_error_date": info.last_error_date,
-                "last_error_message": info.last_error_message,
-                "max_connections": info.max_connections,
-                "ip_address": info.ip_address,
+                "url": data.get("url"),
+                "has_custom_certificate": data.get("has_custom_certificate"),
+                "pending_update_count": data.get("pending_update_count"),
+                "last_error_date": data.get("last_error_date"),
+                "last_error_message": data.get("last_error_message"),
+                "last_synchronization_error_date": data.get("last_synchronization_error_date"),
+                "max_connections": data.get("max_connections"),
+                "ip_address": data.get("ip_address"),
             }
         except Exception as e:
+            logger.exception(f"Failed to read webhook info: {e}")
             return 500, {"error": str(e)}
 
     # 3. Webhook auto-setup
@@ -247,7 +252,7 @@ async def app(scope: Dict[str, Any], receive: Any, send: Any) -> None:
     else:
         status_code, response_data = await handle_get_request(path, query_params, host)
 
-    response_bytes = json.dumps(response_data, indent=2).encode("utf-8")
+    response_bytes = json.dumps(response_data, indent=2, default=str).encode("utf-8")
     await send({
         "type": "http.response.start",
         "status": status_code,
@@ -272,7 +277,7 @@ class handler(BaseHTTPRequestHandler):
         host = self.headers.get("Host", "")
 
         status_code, data = asyncio.run(handle_get_request(parsed.path, query_params, host))
-        response_bytes = json.dumps(data, indent=2).encode("utf-8")
+        response_bytes = json.dumps(data, indent=2, default=str).encode("utf-8")
 
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
@@ -286,7 +291,7 @@ class handler(BaseHTTPRequestHandler):
         secret_token = self.headers.get("X-Telegram-Bot-Api-Secret-Token")
 
         status_code, data = asyncio.run(handle_webhook_update(body, secret_token))
-        response_bytes = json.dumps(data, indent=2).encode("utf-8")
+        response_bytes = json.dumps(data, indent=2, default=str).encode("utf-8")
 
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
