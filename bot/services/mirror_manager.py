@@ -60,6 +60,9 @@ class MirrorManager:
                 self._mirrors.append(MirrorEntry(url=url))
 
     async def initialize(self) -> None:
+        if not self._mirrors:
+            self._mirrors.append(MirrorEntry(url="https://z-library.ec"))
+
         self._session = aiohttp.ClientSession(
             headers={
                 "Accept": "application/json",

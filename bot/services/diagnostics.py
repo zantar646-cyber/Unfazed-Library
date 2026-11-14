@@ -235,15 +235,19 @@ async def check_sources() -> Dict[str, Any]:
     aa_bases = _dedupe(
         [
             settings.annas_archive_base_url,
-            "https://annas-archive.gs",
+            "https://annas-archive.gl",
             "https://annas-archive.pk",
-            "https://annas-archive.org",
-            "https://annas-archive.se",
-            "https://annas-archive.li",
+            "https://annas-archive.gd",
         ]
     )
     zl_bases = _dedupe(
-        [settings.api_base_url, *settings.mirrors, "https://z-library.sk", "https://z-lib.gl"]
+        [
+            settings.api_base_url,
+            *settings.mirrors,
+            "https://z-library.ec",
+            "https://z-lib.gl",
+            "https://z-lib.sk",
+        ]
     )
 
     async with aiohttp.ClientSession(

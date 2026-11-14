@@ -51,12 +51,14 @@ git push origin main
 *(If omitted and `USE_SQLITE=true`, the bot uses `/tmp/digital_library.db` which is writable).*
 
 ### Optional Search Sources & Proxy
-- `ANNAS_ARCHIVE_BASE_URL`: Anna's Archive mirror. Domains rotate and several are currently parked/NXDOMAIN; `.gs` and `.pk` are the newest but may still be behind DDoS-Guard.
+- `ANNAS_ARCHIVE_BASE_URL`: Anna's Archive mirror. Current official domains are `.gl`, `.pk`, `.gd` (older `.org`/`.se`/`.li` are dead or parked). The client falls back across them automatically.
 - `ANNAS_ARCHIVE_SECRET_KEY`: Anna's Archive API secret (optional)
-- `API_BASE_URL` / `MIRRORS`: Z-Library mirror(s) to try
+- `API_BASE_URL` / `MIRRORS`: Z-Library mirror(s) to try. `https://z-library.ec` and `https://z-lib.gl` still answer `/eapi/book/search`.
 - `ZLIBRARY_EMAIL`, `ZLIBRARY_PASSWORD`, `ZLIBRARY_REMIX_USERKEY`, `ZLIBRARY_REMIX_USERID`: Z-Library session. **Local `.env` values are not deployed to Vercel** — set them in the Vercel dashboard.
 - `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`: Route source requests through a proxy if Cloudflare/DDoS-Guard blocks Vercel's IPs
 - `NO_PROXY`: Hosts that should bypass the proxy
+
+Z-Library's `/dl/<token>` pages ship a SHA-1 proof-of-work challenge instead of a normal file response. The bot solves it in pure Python (`bot/utils/zl_challenge.py`), so Z-Library downloads work on Vercel even though there is no browser runtime. Anna's Archive is still DDoS-Guard protected and falls back to LibGen.
 
 ### Source Diagnostics
 After deploying, check which sources are actually reachable **from Vercel's network**:

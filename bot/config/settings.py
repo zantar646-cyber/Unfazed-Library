@@ -28,16 +28,16 @@ def _detect_use_sqlite() -> bool:
 @dataclass(frozen=True)
 class Settings:
     bot_token: str = field(default_factory=lambda: os.getenv("BOT_TOKEN", "").strip())
-    api_base_url: str = field(default_factory=lambda: os.getenv("API_BASE_URL", "").strip())
+    api_base_url: str = field(default_factory=lambda: os.getenv("API_BASE_URL", "https://z-library.ec").strip())
     api_key: str = field(default_factory=lambda: os.getenv("API_KEY", ""))
     zlibrary_email: str = field(default_factory=lambda: os.getenv("ZLIBRARY_EMAIL", ""))
     zlibrary_password: str = field(default_factory=lambda: os.getenv("ZLIBRARY_PASSWORD", ""))
-    singlelogin_url: str = field(default_factory=lambda: os.getenv("SINGLELOGIN_URL", "https://z-library.sk"))
+    singlelogin_url: str = field(default_factory=lambda: os.getenv("SINGLELOGIN_URL", "https://z-library.ec"))
     zlibrary_remix_userkey: str = field(default_factory=lambda: os.getenv("ZLIBRARY_REMIX_USERKEY", ""))
     zlibrary_remix_userid: str = field(default_factory=lambda: os.getenv("ZLIBRARY_REMIX_USERID", ""))
 
     # Anna's Archive
-    annas_archive_base_url: str = field(default_factory=lambda: os.getenv("ANNAS_ARCHIVE_BASE_URL", "https://annas-archive.org"))
+    annas_archive_base_url: str = field(default_factory=lambda: os.getenv("ANNAS_ARCHIVE_BASE_URL", "https://annas-archive.gl"))
     annas_archive_secret_key: str = field(default_factory=lambda: os.getenv("ANNAS_ARCHIVE_SECRET_KEY", ""))
     annas_archive_timeout: int = field(default_factory=lambda: int(os.getenv("ANNAS_ARCHIVE_TIMEOUT", "30")))
     annas_archive_cache_ttl_search: int = field(default_factory=lambda: int(os.getenv("ANNAS_ARCHIVE_CACHE_TTL_SEARCH", "3600")))
@@ -85,9 +85,10 @@ class Settings:
         default_factory=lambda: int(os.getenv("MIRROR_RECHECK_INTERVAL", "3600"))
     )
 
-    mirrors: List[str] = field(default_factory=lambda: [
-        x.strip() for x in os.getenv("MIRRORS", "").split(",") if x.strip()
-    ])
+    mirrors: List[str] = field(default_factory=lambda: (
+        [x.strip() for x in os.getenv("MIRRORS", "").split(",") if x.strip()]
+        or ["https://z-lib.gl"]
+    ))
 
     webhook_url: str = field(default_factory=lambda: os.getenv("WEBHOOK_URL", "").strip())
     webhook_secret: str = field(default_factory=lambda: os.getenv("WEBHOOK_SECRET", "").strip())

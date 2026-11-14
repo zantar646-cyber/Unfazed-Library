@@ -12,11 +12,11 @@
   ],
   "functions": {
     "api/*.py": {
-      "maxDuration": 30,
+      "maxDuration": 60,
       "memory": 1024
     },
     "api/cron/*.py": {
-      "maxDuration": 30,
+      "maxDuration": 60,
       "memory": 1024
     }
   },

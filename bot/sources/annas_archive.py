@@ -64,8 +64,24 @@ class AnnasArchiveBlockedError(AnnasArchiveError):
 
 
 class AnnasArchive:
+    # Anna's Archive rotates domains frequently; parked or NXDOMAIN mirrors are
+    # common. Keep a short candidate list so a dead configured domain does not
+    # disable the source entirely.
+    FALLBACK_BASES = (
+        "https://annas-archive.gl",
+        "https://annas-archive.pk",
+        "https://annas-archive.gd",
+    )
+
     def __init__(self) -> None:
-        self.base_url = settings.annas_archive_base_url.rstrip("/")
+        configured = settings.annas_archive_base_url.rstrip("/")
+        bases: list[str] = []
+        for base in (configured, *self.FALLBACK_BASES):
+            base = (base or "").rstrip("/")
+            if base and base not in bases:
+                bases.append(base)
+        self._bases = bases or ["https://annas-archive.gl"]
+        self.base_url = self._bases[0]
         self.secret_key = settings.annas_archive_secret_key
         self._client: Optional[httpx.AsyncClient] = None
         self._cache: Dict[str, Any] = {}
@@ -73,6 +89,20 @@ class AnnasArchive:
         self._last_request_time: float = 0.0
         self._user_agent_index: int = 0
         self._auth_cookies: Dict[str, str] = {}
+
+    def _next_base(self) -> str:
+        """Switch to the next candidate domain and return it."""
+        try:
+            index = self._bases.index(self.base_url)
+        except ValueError:
+            index = -1
+        self.base_url = self._bases[(index + 1) % len(self._bases)]
+        return self.base_url
+
+    def _rebase_url(self, url: str, old_base: str, new_base: str) -> str:
+        if url.startswith(old_base):
+            return new_base + url[len(old_base):]
+        return url.replace(old_base, new_base, 1)
 
     def _rotate_user_agent(self) -> str:
         ua = USER_AGENTS[self._user_agent_index % len(USER_AGENTS)]
@@ -147,6 +177,13 @@ class AnnasArchive:
         before_sleep=before_sleep_log(logger, "DEBUG"),
     )
     async def _request(self, url: str, use_cache: bool = True, cache_ttl: Optional[int] = None) -> httpx.Response:
+        # A previous attempt may have rotated the active domain; keep retries
+        # pointed at the mirror that is currently selected.
+        for base in self._bases:
+            if base != self.base_url and base in url:
+                url = self._rebase_url(url, base, self.base_url)
+                break
+
         cached = self._get_cache(url) if use_cache else None
         if cached is not None:
             return cached
@@ -158,7 +195,20 @@ class AnnasArchive:
 
         logger.debug(f"AA request: GET {url} [UA={ua[:50]}...]")
 
-        response = await client.get(url)
+        try:
+            response = await client.get(url)
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError) as exc:
+            previous_base = self.base_url
+            new_base = self._next_base()
+            if new_base == previous_base:
+                raise
+            logger.warning(
+                f"AA unreachable at {previous_base} ({type(exc).__name__}); "
+                f"switching to {new_base}"
+            )
+            url = self._rebase_url(url, previous_base, new_base)
+            response = await client.get(url)
+
         logger.debug(f"AA response: {url} -> {response.status_code} ({len(response.content)} bytes)")
 
         if response.status_code == 429:

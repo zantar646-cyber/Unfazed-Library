@@ -27,6 +27,7 @@ from bot.services.cache import cache
 from bot.services.mirror_manager import MirrorManager, NoHealthyMirrorError
 from bot.utils.browser_downloader import BROWSER_AVAILABLE, browser_login
 from bot.utils.net import proxy_kwargs
+from bot.utils.zl_challenge import looks_like_challenge, solve_challenges
 
 
 CLOUDFLARE_BLOCKED_HOSTS = frozenset({
@@ -759,6 +760,7 @@ class APIService:
         redirect_count = 0
         max_redirects = 10
         retried = False
+        challenge_attempts = 0
         headers = {"Accept": "*/*"}
         if extra_headers:
             headers.update(extra_headers)
@@ -798,6 +800,23 @@ class APIService:
 
                 if resp.status != 200:
                     body = await resp.read()
+                    # Z-Library fronts /dl with a SHA-1 proof-of-work page that
+                    # a browser solves automatically. Do the same in Python so
+                    # serverless hosts without a browser can still download.
+                    if challenge_attempts < 2 and looks_like_challenge(body):
+                        solutions = solve_challenges(body)
+                        if solutions:
+                            merged = dict(cookies or {})
+                            for name, morsel in resp.cookies.items():
+                                merged[name] = morsel.value
+                            merged.update(solutions[0])
+                            cookies = merged
+                            challenge_attempts += 1
+                            logger.info(
+                                f"  Solved Z-Library browser challenge "
+                                f"(attempt {challenge_attempts}); retrying {current_url}"
+                            )
+                            continue
                     if self._is_cloudflare_body(body):
                         logger.warning(f"  Cloudflare challenge at {current_url} (HTTP {resp.status})")
                     else:

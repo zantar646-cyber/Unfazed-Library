@@ -517,10 +517,11 @@ async def _record_successful_download(book_id: str, db_user: DBUser, method: str
 async def _try_fallback_file(book: Any, fmt: str) -> tuple[Optional[bytes], Optional[str], Optional[str]]:
     """Find the same title on LibGen when the primary source is blocked.
 
-    Z-Library search works from most hosts, but its ``/dl`` endpoints sit behind
-    a Cloudflare challenge that a plain HTTP client cannot pass. Anna's Archive
-    is likewise DDoS-Guard protected. LibGen remains downloadable, so use it as
-    a cross-source fallback instead of sending the user a link.
+    Z-Library downloads work through the built-in proof-of-work solver
+    (``bot/utils/zl_challenge.py``), but Anna's Archive is DDoS-Guard protected
+    from datacenter IPs and Z-Library can still throttle/block a request. LibGen
+    remains downloadable, so use it as a cross-source fallback instead of
+    sending the user a link.
 
     The whole lookup is bounded so it cannot exhaust the serverless time budget.
 
