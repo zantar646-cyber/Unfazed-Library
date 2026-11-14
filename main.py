@@ -13,7 +13,7 @@ from loguru import logger
 
 from bot.config.settings import settings
 from bot.database.service import db
-from bot.handlers import admin, alerts, book, bookclub, inline_query, reader, shelf, user
+from bot.handlers import admin, alerts, book, bookclub, channel, inline_query, reader, shelf, user
 from bot.middlewares.auth import RegistrationMiddleware
 from bot.middlewares.logging import LoggingMiddleware
 from bot.middlewares.rate_limit import RateLimitMiddleware
@@ -179,6 +179,7 @@ def create_dispatcher() -> Dispatcher:
         reader.router,
         bookclub.router,
         inline_query.router,
+        channel.router,
         admin.router,
     ]
     for r in routers:
