@@ -140,6 +140,16 @@ async def on_startup(bot: Bot) -> None:
     bot_info = await bot.get_me()
     logger.info(f"Bot started: @{bot_info.username} (ID: {bot_info.id})")
 
+    from bot.utils.storage import storage_chat_id
+
+    if storage_chat_id() is None:
+        logger.warning(
+            "STORAGE_CHANNEL_ID is not set: the Convert button opens the converter "
+            "bot but the downloaded file is not handed over automatically. "
+            "Add both bots as admins of a private channel and set its id to enable "
+            "one-tap conversion."
+        )
+
     # Startup diagnostics
     logger.info("=== Startup Diagnostics ===")
     status = await api.get_status()

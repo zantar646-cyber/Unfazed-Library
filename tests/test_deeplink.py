@@ -61,6 +61,54 @@ def test_missing_converter_username_is_rejected(monkeypatch):
         deeplink.build_convert_deeplink(1)
 
 
+def test_plain_link_falls_back_to_the_converter_bot(monkeypatch):
+    monkeypatch.setattr(deeplink, "settings", _fake_settings())
+    assert deeplink.converter_bot_link() == "https://t.me/TestConverterBot"
+
+    monkeypatch.setattr(deeplink, "settings", _fake_settings(username="@TestConverterBot"))
+    assert deeplink.converter_bot_link() == "https://t.me/TestConverterBot"
+
+    monkeypatch.setattr(deeplink, "settings", _fake_settings(username=""))
+    assert deeplink.converter_bot_link() is None
+
+
+@pytest.mark.asyncio
+async def test_convert_button_shows_even_without_a_storage_channel(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from bot.handlers import book as book_handlers
+
+    monkeypatch.setattr(deeplink, "settings", _fake_settings())
+
+    async def _no_storage(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(book_handlers, "store_file_for_conversion", _no_storage)
+    monkeypatch.setattr(book_handlers, "storage_chat_id", lambda: None)
+
+    message = SimpleNamespace(
+        bot=SimpleNamespace(copy_message=AsyncMock()),
+        chat=SimpleNamespace(id=1),
+        answer_document=AsyncMock(),
+    )
+    book = SimpleNamespace(
+        id="book-1",
+        title="A Book",
+        author="An Author",
+        file_size=1024,
+        file_extension="epub",
+        download_url="",
+    )
+
+    await book_handlers._send_book_file(message, book, b"data")
+
+    markup = message.answer_document.await_args.kwargs["reply_markup"]
+    buttons = [button for row in markup.inline_keyboard for button in row]
+    convert_button = next(button for button in buttons if "Convert" in button.text)
+
+    assert convert_button.url == "https://t.me/TestConverterBot"
+
+
 def test_download_keyboard_uses_a_url_button_not_a_bot_to_bot_call():
     markup = download_complete_keyboard(
         "book-1", convert_url="https://t.me/TestConverterBot?start=convert_42"

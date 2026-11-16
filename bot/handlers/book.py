@@ -39,7 +39,7 @@ from bot.sources import router as source_router
 from bot.utils.browser_downloader import (
     try_browser_download,
 )
-from bot.utils.deeplink import build_convert_deeplink
+from bot.utils.deeplink import build_convert_deeplink, converter_bot_link
 from bot.utils.i18n import get_text
 from bot.utils.net import proxy_kwargs
 from bot.utils.storage import storage_chat_id, store_file_for_conversion
@@ -591,12 +591,20 @@ async def _send_book_file(
         ),
     )
 
-    convert_url = None
+    # The button must always be visible. With a storage channel the file is
+    # already waiting in the Converter bot; without one we still open the bot
+    # so the user can forward the file and convert it there.
+    convert_url = converter_bot_link()
     if storage_message_id:
         try:
             convert_url = build_convert_deeplink(storage_message_id)
         except Exception as exc:
             logger.warning(f"Could not build converter deep link: {exc}")
+    elif convert_url:
+        logger.debug(
+            "STORAGE_CHANNEL_ID is not set; Convert button opens the converter "
+            "bot without a pre-loaded file"
+        )
 
     reply_markup = download_complete_keyboard(book.id, convert_url=convert_url)
     chat_id = storage_chat_id()
@@ -1152,18 +1160,24 @@ async def callback_convert(callback: CallbackQuery, db_user: Optional[DBUser] = 
         )
         return
 
-    # Legacy fallback for old messages that stored an in-memory convert key.
+    # Fallback for cards sent before the storage-channel bridge existed and for
+    # servers without STORAGE_CHANNEL_ID: open the Converter bot directly.
+    fallback_url = converter_bot_link()
     text = (
         f"{get_text('convert_title', lang)}\n\n"
         f"{get_text('convert_message', lang)}"
     )
+    if not fallback_url:
+        await callback.message.answer(text, parse_mode="HTML")
+        return
+
     await callback.message.answer(
         text,
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
                 text=get_text("convert_button", lang),
-                url="https://t.me/Unfazed_File_Convertor_bot"
+                url=fallback_url,
             )]
         ])
     )

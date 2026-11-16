@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+from typing import Optional
 
 from bot.config.settings import settings
 
@@ -43,9 +44,24 @@ def build_convert_payload(storage_message_id: int) -> str:
     return payload
 
 
+def _converter_username() -> str:
+    return (settings.converter_bot_username or "").strip().lstrip("@")
+
+
+def converter_bot_link() -> Optional[str]:
+    """Return the plain t.me link to the Converter bot (no start payload).
+
+    Used as a fallback when no shared storage channel is configured: the button
+    still opens the Converter bot, the user just forwards the file manually
+    instead of the bridge handing it over automatically.
+    """
+    username = _converter_username()
+    return f"https://t.me/{username}" if username else None
+
+
 def build_convert_deeplink(storage_message_id: int) -> str:
     """Return the t.me deep link that opens the Converter bot."""
-    username = (settings.converter_bot_username or "").strip().lstrip("@")
+    username = _converter_username()
     if not username:
         raise ValueError("CONVERTER_BOT_USERNAME is not configured")
     return f"https://t.me/{username}?start={build_convert_payload(storage_message_id)}"

@@ -73,7 +73,7 @@ Converter bot (`.env`):
 - `STORAGE_CHANNEL_ID`: same channel id
 - `DEEPLINK_SECRET`: same secret
 
-Without `STORAGE_CHANNEL_ID`, downloads still work but the file card shows no Convert button. With `DEEPLINK_SECRET` set on only one side, links are rejected by design.
+Without `STORAGE_CHANNEL_ID`, downloads still work and the file card still shows a Convert button, but it opens the Converter bot without the file attached (the user forwards the book there). With `DEEPLINK_SECRET` set on only one side, links are rejected by design.
 
 Z-Library's `/dl/<token>` pages ship a SHA-1 proof-of-work challenge instead of a normal file response. The bot solves it in pure Python (`bot/utils/zl_challenge.py`), so Z-Library downloads work on Vercel even though there is no browser runtime. Anna's Archive is still DDoS-Guard protected and falls back to LibGen.
 
