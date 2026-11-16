@@ -122,12 +122,27 @@ async def handle_get_request(path: str, query_params: Dict[str, list[str]], host
 
         db_name = "postgresql (supabase)" if (not settings.use_sqlite and ("supabase" in settings.database_url or settings.supabase_url)) else ("postgresql" if not settings.use_sqlite else ("sqlite (tmp)" if settings.is_vercel else "sqlite"))
 
+        from bot.utils.storage import storage_chat_id
+
+        bridge: Dict[str, Any] = {
+            "storage_channel_set": storage_chat_id() is not None,
+            "deeplink_secret_set": bool(settings.deeplink_secret),
+            "converter_bot_username": settings.converter_bot_username or None,
+        }
+        try:
+            bridge["books_with_storage_message"] = (
+                await db.count_books_with_storage_message()
+            )
+        except Exception as e:
+            bridge["books_with_storage_message"] = f"error: {type(e).__name__}"
+
         return 200, {
             "status": "online",
             "platform": "Vercel Serverless",
             "commit": (os.getenv("VERCEL_GIT_COMMIT_SHA") or "local")[:7],
             "bot": bot_info,
             "database": db_name,
+            "bridge": bridge,
             "active_engine": "bot (full architecture)",
             "endpoints": {
                 "webhook": "/api/webhook",

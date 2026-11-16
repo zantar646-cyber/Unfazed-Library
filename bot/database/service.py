@@ -309,6 +309,16 @@ class DatabaseService:
             )
             return (result.rowcount or 0) > 0
 
+    async def count_books_with_storage_message(self) -> int:
+        """How many books are currently mirrored into the storage channel."""
+        async with self.session() as session:
+            result = await session.execute(
+                select(func.count())
+                .select_from(Book)
+                .where(Book.storage_message_id.is_not(None))
+            )
+            return int(result.scalar() or 0)
+
     async def search_books(
         self,
         query: str,
