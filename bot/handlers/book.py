@@ -297,6 +297,7 @@ async def show_book_detail(message: Message, book_id: str, callback: Optional[Ca
         is_fav = await db.is_favorite(uid, book_id)
 
     caption = build_book_message(book, lang)
+    detail_convert_url = _convert_url_for(getattr(book, "storage_message_id", None))
 
     if book.cover_url:
         try:
@@ -309,6 +310,7 @@ async def show_book_detail(message: Message, book_id: str, callback: Optional[Ca
                     is_favorite=is_fav,
                     download_url=book.download_url,
                     back_callback=back_callback,
+                    convert_url=detail_convert_url,
                 ),
             )
             if callback:
@@ -330,6 +332,7 @@ async def show_book_detail(message: Message, book_id: str, callback: Optional[Ca
                     is_favorite=is_fav,
                     download_url=book.download_url,
                     back_callback=back_callback,
+                    convert_url=detail_convert_url,
                 ),
             )
         except TelegramBadRequest:
@@ -341,6 +344,7 @@ async def show_book_detail(message: Message, book_id: str, callback: Optional[Ca
                     is_favorite=is_fav,
                     download_url=book.download_url,
                     back_callback=back_callback,
+                    convert_url=detail_convert_url,
                 ),
             )
     else:
@@ -352,6 +356,7 @@ async def show_book_detail(message: Message, book_id: str, callback: Optional[Ca
                 is_favorite=is_fav,
                 download_url=book.download_url,
                 back_callback=back_callback,
+                convert_url=detail_convert_url,
             ),
         )
 
@@ -395,11 +400,19 @@ async def callback_favorite_toggle(callback: CallbackQuery, db_user: Optional[DB
         return
 
     new_is_fav = not is_fav
+    storage_message_id = None
+    try:
+        book = await db.get_book(book_id)
+        storage_message_id = getattr(book, "storage_message_id", None)
+    except Exception as exc:
+        logger.warning(f"Could not reload book {book_id} for keyboard: {exc}")
+
     await callback.message.edit_reply_markup(
         reply_markup=book_detail_keyboard(
             book_id=book_id,
             is_favorite=new_is_fav,
             back_callback=back_callback,
+            convert_url=_convert_url_for(storage_message_id),
         ),
     )
 
@@ -549,6 +562,21 @@ def _get_file_extension(book: Any) -> str:
     return ".epub"
 
 
+def _convert_url_for(storage_message_id: Optional[int]) -> Optional[str]:
+    """Deep link into the Converter bot for a stored channel message.
+
+    With a stored message id the link carries ``convert_<id>`` so the Converter
+    bot can pull the file; without one we still return the plain bot link so the
+    button is always present (the user forwards the file manually).
+    """
+    if storage_message_id:
+        try:
+            return build_convert_deeplink(int(storage_message_id))
+        except Exception as exc:
+            logger.warning(f"Could not build converter deep link: {exc}")
+    return converter_bot_link()
+
+
 async def _send_book_file(
     message: Message,
     book: Any,
@@ -580,61 +608,81 @@ async def _send_book_file(
     # Store once in the shared private channel, then copy that message to the
     # user. The channel message id is the stable cross-bot reference; the
     # Library bot's file_id is never handed to the Converter bot.
-    storage_message_id = await store_file_for_conversion(
-        message.bot,
-        file_bytes,
-        filename,
-        caption=(
-            f"\U0001f4e6 <b>{sanitize_html(book.title)}</b>\n"
-            f"<i>by {sanitize_html(book.author or 'Unknown')}</i>  |  "
-            f"<code>{book.id}</code>"
-        ),
+    storage_caption = (
+        f"\U0001f4e6 <b>{sanitize_html(book.title)}</b>\n"
+        f"<i>by {sanitize_html(book.author or 'Unknown')}</i>  |  "
+        f"<code>{book.id}</code>"
     )
-
-    # The button must always be visible. With a storage channel the file is
-    # already waiting in the Converter bot; without one we still open the bot
-    # so the user can forward the file and convert it there.
-    convert_url = converter_bot_link()
-    if storage_message_id:
-        try:
-            convert_url = build_convert_deeplink(storage_message_id)
-        except Exception as exc:
-            logger.warning(f"Could not build converter deep link: {exc}")
-    elif convert_url:
-        logger.debug(
-            "STORAGE_CHANNEL_ID is not set; Convert button opens the converter "
-            "bot without a pre-loaded file"
-        )
-
-    reply_markup = download_complete_keyboard(book.id, convert_url=convert_url)
     chat_id = storage_chat_id()
 
-    if storage_message_id and chat_id is not None:
+    def _markup(message_id: Optional[int]) -> InlineKeyboardMarkup:
+        return download_complete_keyboard(
+            book.id, convert_url=_convert_url_for(message_id)
+        )
+
+    async def _copy_from_storage(message_id: int) -> bool:
         # copy_message returns MessageId, not Message; the document is
         # delivered by Telegram in a single server-side hop.
         try:
             await message.bot.copy_message(
                 chat_id=message.chat.id,
                 from_chat_id=chat_id,
-                message_id=storage_message_id,
+                message_id=message_id,
                 caption=caption,
                 parse_mode="HTML",
-                reply_markup=reply_markup,
+                reply_markup=_markup(message_id),
             )
-            logger.debug(f"Sent book {book.id} via storage copy, convert_url={bool(convert_url)}")
-            return
+            return True
         except Exception as exc:
-            # Storage copy can fail if the channel id is wrong or the bot lost
-            # access; still deliver the book directly so the download succeeds.
-            logger.warning(f"Storage copy failed for book {book.id}: {exc}")
+            # Can fail if the channel id is wrong, the bot lost access, or the
+            # stored message was deleted; the caller re-uploads or falls back.
+            logger.warning(
+                f"Storage copy failed for book {book.id} "
+                f"(message_id={message_id}): {exc}"
+            )
+            return False
+
+    # Reuse the copy made by an earlier download so repeat downloads cost one
+    # server-side hop instead of another full upload to the channel.
+    stored_id = getattr(book, "storage_message_id", None)
+    if chat_id is not None and stored_id:
+        if await _copy_from_storage(int(stored_id)):
+            logger.debug(f"Sent book {book.id} from stored copy (message_id={stored_id})")
+            return
+
+    storage_message_id = None
+    if chat_id is not None:
+        storage_message_id = await store_file_for_conversion(
+            message.bot,
+            file_bytes,
+            filename,
+            caption=storage_caption,
+        )
+        if storage_message_id:
+            try:
+                book.storage_message_id = storage_message_id
+            except Exception:
+                pass
+            try:
+                await db.set_book_storage_message(book.id, storage_message_id)
+            except Exception as exc:
+                logger.warning(
+                    f"Could not save storage message id for book {book.id}: {exc}"
+                )
+            if await _copy_from_storage(storage_message_id):
+                logger.debug(
+                    f"Sent book {book.id} via storage copy "
+                    f"(message_id={storage_message_id})"
+                )
+                return
 
     await message.answer_document(
         document=BufferedInputFile(file=file_bytes, filename=filename),
         caption=caption,
         parse_mode="HTML",
-        reply_markup=reply_markup,
+        reply_markup=_markup(storage_message_id),
     )
-    logger.debug(f"Sent book {book.id} directly, convert_url={bool(convert_url)}")
+    logger.debug(f"Sent book {book.id} directly, bridge={bool(storage_message_id)}")
 
 
 async def _record_successful_download(book_id: str, db_user: DBUser, method: str, book: Any) -> None:

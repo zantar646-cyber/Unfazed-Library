@@ -59,7 +59,7 @@ git push origin main
 - `NO_PROXY`: Hosts that should bypass the proxy
 
 ### File Converter Bot Bridge
-The Library bot and the Converter bot never talk to each other. Downloaded files are stored in a **shared private Telegram channel**, and the Library bot sends the user to the Converter bot with a `?start=convert_<message_id>` deep link. The Converter bot uses `copyMessage` with that channel id, so no `file_id` crosses bots.
+The Library bot and the Converter bot never talk to each other. Downloaded files are stored in a **shared private Telegram channel**, the channel `message_id` is saved in `books.storage_message_id`, and the Library bot sends the user to the Converter bot with a `?start=convert_<message_id>` deep link. The Converter bot runs `copyMessage` with that channel id, so no `file_id` crosses bots.
 
 1. Create a private channel, add **both bots as administrators** (post messages is enough).
 2. Set the same values in both projects:
@@ -67,13 +67,15 @@ The Library bot and the Converter bot never talk to each other. Downloaded files
 Library bot (Vercel):
 - `STORAGE_CHANNEL_ID`: numeric channel id, e.g. `-1001234567890`
 - `CONVERTER_BOT_USERNAME`: converter username without `@` (default `Unfazed_File_Convertor_bot`)
-- `DEEPLINK_SECRET`: optional shared HMAC secret; strongly recommended so users cannot enumerate channel message ids
+- `DEEPLINK_SECRET`: shared HMAC secret; **required** — the Converter bot rejects unsigned payloads
 
 Converter bot (`.env`):
 - `STORAGE_CHANNEL_ID`: same channel id
 - `DEEPLINK_SECRET`: same secret
 
-Without `STORAGE_CHANNEL_ID`, downloads still work and the file card still shows a Convert button, but it opens the Converter bot without the file attached (the user forwards the book there). With `DEEPLINK_SECRET` set on only one side, links are rejected by design.
+The Convert button is attached to the delivered file and to the book details card once a book has been mirrored. Without `STORAGE_CHANNEL_ID`, downloads still work and the button still appears, but it opens the Converter bot without the file attached (the user forwards it manually).
+
+Full protocol, payload format, and the Converter-side reference handler: [`docs/CONVERTER_BOT_BRIDGE.md`](docs/CONVERTER_BOT_BRIDGE.md).
 
 Z-Library's `/dl/<token>` pages ship a SHA-1 proof-of-work challenge instead of a normal file response. The bot solves it in pure Python (`bot/utils/zl_challenge.py`), so Z-Library downloads work on Vercel even though there is no browser runtime. Anna's Archive is still DDoS-Guard protected and falls back to LibGen.
 

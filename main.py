@@ -149,6 +149,12 @@ async def on_startup(bot: Bot) -> None:
             "Add both bots as admins of a private channel and set its id to enable "
             "one-tap conversion."
         )
+    elif not settings.deeplink_secret:
+        logger.warning(
+            "DEEPLINK_SECRET is not set: deep links will be unsigned and the "
+            "Converter bot rejects unsigned payloads. Set the same "
+            "DEEPLINK_SECRET in both bots."
+        )
 
     # Startup diagnostics
     logger.info("=== Startup Diagnostics ===")

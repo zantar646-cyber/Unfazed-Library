@@ -65,6 +65,11 @@ class DatabaseService:
                     if "source" not in cols:
                         connection.execute(text("ALTER TABLE books ADD COLUMN source VARCHAR"))
                         logger.info("Migrated: added 'source' column to books table")
+                    if "storage_message_id" not in cols:
+                        connection.execute(
+                            text("ALTER TABLE books ADD COLUMN storage_message_id BIGINT")
+                        )
+                        logger.info("Migrated: added 'storage_message_id' column to books table")
 
                     user_result = connection.execute(text("PRAGMA table_info(users)"))
                     user_cols = {row[1] for row in user_result}
@@ -76,9 +81,15 @@ class DatabaseService:
                         logger.info("Migrated: added 'referrer_id' column to users table")
                 elif dialect == "postgresql":
                     connection.execute(text("ALTER TABLE books ADD COLUMN IF NOT EXISTS source VARCHAR"))
+                    connection.execute(
+                        text("ALTER TABLE books ADD COLUMN IF NOT EXISTS storage_message_id BIGINT")
+                    )
                     connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20)"))
                     connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id BIGINT"))
-                    logger.info("Verified PostgreSQL columns exist (books.source, users.referral_code, users.referrer_id)")
+                    logger.info(
+                        "Verified PostgreSQL columns exist (books.source, "
+                        "books.storage_message_id, users.referral_code, users.referrer_id)"
+                    )
             await conn.run_sync(_check_and_add)
 
     @asynccontextmanager
@@ -282,6 +293,21 @@ class DatabaseService:
                 select(Book).where(Book.external_id == external_id)
             )
             return result.scalar_one_or_none()
+
+    async def set_book_storage_message(self, book_id: str, message_id: int) -> bool:
+        """Remember which storage-channel message holds this book's file.
+
+        The Converter bot pulls the file with ``copyMessage(message_id=...)``,
+        so this mapping is what makes a deep link survive a restart or a cold
+        serverless instance.
+        """
+        async with self.session() as session:
+            result = await session.execute(
+                update(Book)
+                .where(Book.id == book_id)
+                .values(storage_message_id=int(message_id))
+            )
+            return (result.rowcount or 0) > 0
 
     async def search_books(
         self,

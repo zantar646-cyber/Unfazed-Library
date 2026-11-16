@@ -112,6 +112,7 @@ def book_detail_keyboard(
     is_favorite: bool = False,
     download_url: Optional[str] = None,
     back_callback: str = "menu",
+    convert_url: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -126,6 +127,12 @@ def book_detail_keyboard(
         InlineKeyboardButton(text="🔖 Shelf", callback_data=f"shelf:choose:{book_id}"),
         InlineKeyboardButton(text="📖 Read", callback_data=f"read:{book_id}:0:0"),
     )
+    if convert_url:
+        # Deep link into the Converter bot: it pulls the already-stored file
+        # from the shared channel, so no bot-to-bot forwarding is needed.
+        builder.row(
+            InlineKeyboardButton(text="\U0001f504 Convert", url=convert_url),
+        )
     builder.row(InlineKeyboardButton(text="\u2b05\ufe0f Back", callback_data=back_callback))
     return builder.as_markup()
 

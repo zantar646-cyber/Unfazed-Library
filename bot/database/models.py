@@ -78,6 +78,10 @@ class Book(Base):
     file_extension: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     file_token: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     read_online_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    # Message id of this book's copy in the shared storage channel. The
+    # Converter bot pulls the file with copyMessage(from_chat_id=channel,
+    # message_id=storage_message_id), so the id must survive restarts.
+    storage_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     download_count: Mapped[int] = mapped_column(Integer, default=0)
     rating: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("categories.id"), nullable=True)
